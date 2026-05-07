@@ -1,5 +1,6 @@
 """Main application window (View layer)."""
 
+import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import QSize, QTimer
 from PyQt6.QtGui import QColor
@@ -11,6 +12,7 @@ from gui.graph_viewmodel import (
     AcquisitionStatus, ConnectionStatus, GraphViewModel, N_SAMPLES, PicoscopeModel,
     SAMPLE_RATE, V_RANGE,
 )
+from gui.matched_filter_viewmodel import MatchedFilterViewModel
 from gui.theme import DARK_PALETTE as P
 
 _STATUS_COLOR = {
@@ -123,6 +125,29 @@ class MainWindow(QMainWindow):
         self._plot_widget.setMouseEnabled(x=True, y=False)
 
         layout.addWidget(self._plot_widget)
+
+        # --- Matched filter plot ---
+        self._mf_plot = pg.PlotWidget()
+        self._mf_plot.setTitle("Matched Filter Output", color=P.text_primary, size="11pt")
+        self._mf_plot.showGrid(x=True, y=True, alpha=0.4)
+        self._mf_plot.getPlotItem().getAxis("bottom").setPen(pg.mkPen(P.border))
+        self._mf_plot.getPlotItem().getAxis("left").setPen(pg.mkPen(P.border))
+        self._mf_plot.setLabel("bottom", "Time", units="s",
+                               **{"color": P.text_secondary, "font-size": "10pt"})
+        self._mf_plot.setLabel("left", "Correlation",
+                               **{"color": P.text_secondary, "font-size": "10pt"})
+        self._mf_plot.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
+        self._mf_plot.setXRange(0, _duration, padding=0)
+        self._mf_plot.setLimits(xMin=0, xMax=_duration)
+        self._mf_plot.setMouseEnabled(x=True, y=True)
+        self._mf_curve = self._mf_plot.plot(
+            [], [], pen=pg.mkPen(color=P.secondary_accent, width=2)
+        )
+        layout.addWidget(self._mf_plot)
+
+        # Matched filter ViewModel — call load_reference() to arm it
+        self._mf_vm = MatchedFilterViewModel(self)
+        self._mf_vm.result_ready.connect(self._on_mf_result)
 
         # --- Model toggle buttons ---
         toggle_style = f"""
@@ -242,6 +267,7 @@ class MainWindow(QMainWindow):
             self._vm.model_changed.disconnect(self._on_model_changed)
             self._vm.picoscope_status_changed.disconnect(self._on_status_changed)
             self._vm.acquisition_status_changed.disconnect(self._on_acq_status_changed)
+            self._vm.live_data_ready.disconnect(self._on_live_data_ready)
 
         self._vm = vm
         vm.channels_changed.connect(self._on_channels_changed)
@@ -250,6 +276,7 @@ class MainWindow(QMainWindow):
         vm.model_changed.connect(self._on_model_changed)
         vm.picoscope_status_changed.connect(self._on_status_changed)
         vm.acquisition_status_changed.connect(self._on_acq_status_changed)
+        vm.live_data_ready.connect(self._on_live_data_ready)
 
         self._on_meta_changed()
         self._on_channels_changed()
@@ -258,6 +285,13 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
+
+    def _on_live_data_ready(self) -> None:
+        assert self._vm is not None
+        self._mf_vm.process(self._vm.dataB)
+
+    def _on_mf_result(self, x: np.ndarray, y: np.ndarray) -> None:
+        self._mf_curve.setData(x, y)
 
     def _on_acq_status_changed(self, status: AcquisitionStatus) -> None:
         color = _ACQ_COLOR.get(status, P.text_secondary)
