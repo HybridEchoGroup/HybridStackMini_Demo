@@ -7,7 +7,10 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSizePolicy, QLabel,
 )
 
-from gui.graph_viewmodel import AcquisitionStatus, ConnectionStatus, GraphViewModel, PicoscopeModel
+from gui.graph_viewmodel import (
+    AcquisitionStatus, ConnectionStatus, GraphViewModel, N_SAMPLES, PicoscopeModel,
+    SAMPLE_RATE, V_RANGE,
+)
 from gui.theme import DARK_PALETTE as P
 
 _STATUS_COLOR = {
@@ -110,6 +113,15 @@ class MainWindow(QMainWindow):
         self._plot_widget.getPlotItem().getAxis("bottom").setPen(pg.mkPen(P.border))
         self._plot_widget.getPlotItem().getAxis("left").setPen(pg.mkPen(P.border))
         self._plot_widget.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
+
+        # Y axis: fixed to ±V_RANGE, mouse interaction disabled
+        # X axis: interactive zoom/pan, clamped to the data window
+        _duration = N_SAMPLES / SAMPLE_RATE        # 0.002 s
+        self._plot_widget.setXRange(0, _duration, padding=0)
+        self._plot_widget.setYRange(-V_RANGE, V_RANGE, padding=0)
+        self._plot_widget.setLimits(xMin=0, xMax=_duration)
+        self._plot_widget.setMouseEnabled(x=True, y=False)
+
         layout.addWidget(self._plot_widget)
 
         # --- Model toggle buttons ---

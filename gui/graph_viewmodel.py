@@ -34,6 +34,12 @@ from driver.picoscope import PicoScope, create_backend
 from driver.utils import channels, voltage_level, timebase
 
 
+# Acquisition hardware constants
+N_SAMPLES   = 312_500
+SAMPLE_RATE = 156.25e6          # Hz
+V_RANGE     = 1000.0            # ±1000 mV
+_TIME_AXIS  = np.linspace(0, N_SAMPLES / SAMPLE_RATE, N_SAMPLES)  # seconds
+
 # Default colour palette (matplotlib tab10 subset)
 _PALETTE = [
     "#1f77b4",
@@ -148,7 +154,7 @@ class GraphViewModel(QObject):
     acquisition_status_changed = pyqtSignal(object) # carries AcquisitionStatus
 
     def __init__(self, title: str = "", x_label: str = "Time", x_unit: str = "s",
-        y_label: str = "Amplitude", y_unit: str = "V", parent: Optional[QObject] = None) -> None:
+        y_label: str = "Voltage", y_unit: str = "mV", parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
 
         self._title = title
@@ -277,8 +283,7 @@ class GraphViewModel(QObject):
             return
 
         self.dataB = data[:, 1]
-        x = np.arange(len(self.dataB), dtype=float)
-        self.update_channel("CH B", x, self.dataB)
+        self.update_channel("CH B", _TIME_AXIS, self.dataB)
         self.live_data_ready.emit()
 
     # ------------------------------------------------------------------
