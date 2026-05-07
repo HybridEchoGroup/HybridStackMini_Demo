@@ -22,12 +22,16 @@ The view subscribes to all signals; callers never touch the view directly.
 """
 
 from __future__ import annotations
+from enum import Enum, auto
 
 from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
+
+from driver.picoscope import PicoScope, create_backend
+from driver.utils import channels, voltage_level
 
 
 # Default colour palette (matplotlib tab10 subset)
@@ -42,6 +46,17 @@ _PALETTE = [
     "#7f7f7f",
 ]
 
+class PicoscopeModel(Enum):
+    """Supported PicoScope hardware models."""
+    PS6424E = "6000s"
+    PS3406B = "3000s"
+
+class ConnectionStatus(Enum):
+    """Connection status for a device."""
+    DISCONNECTED = auto()
+    CONNECTING   = auto()
+    CONNECTED    = auto()
+    ERROR        = auto()
 
 @dataclass
 class ChannelData:
@@ -52,6 +67,25 @@ class ChannelData:
     width: int = 2
     visible: bool = True
 
+class _WorkerSignals(QObject):
+    """Signals for QRunnable workers (QRunnable itself cannot have signals)."""
+    finished = pyqtSignal(object)   # carries result on success
+    error    = pyqtSignal(str)      # carries error message on failure
+
+class _PicoConnectRunnable(QRunnable):
+    def __init__(self, model: str) -> None:
+        super().__init__()
+        self.setAutoDelete(True)
+        self.signals = _WorkerSignals()
+        self._model = model
+
+    def run(self) -> None:
+        try:
+            handler_cls = create_backend(self._model)
+            handle = handler_cls()
+            self.signals.finished.emit(handle)
+        except Exception as e:
+            self.signals.error.emit(str(e))
 
 class GraphViewModel(QObject):
     """Holds graph state and notifies the view of changes via signals.
@@ -72,16 +106,12 @@ class GraphViewModel(QObject):
     channels_changed = pyqtSignal()
     channel_data_changed = pyqtSignal(str)   # carries the channel name
     meta_changed = pyqtSignal()
+    model_changed = pyqtSignal(object)       # carries PicoscopeModel | None
 
-    def __init__(
-        self,
-        title: str = "",
-        x_label: str = "Time",
-        x_unit: str = "s",
-        y_label: str = "Amplitude",
-        y_unit: str = "V",
-        parent: Optional[QObject] = None,
-    ) -> None:
+    picoscope_status_changed = pyqtSignal(object) 
+
+    def __init__(self, title: str = "", x_label: str = "Time", x_unit: str = "s",
+        y_label: str = "Amplitude", y_unit: str = "V", parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
 
         self._title = title
@@ -90,6 +120,15 @@ class GraphViewModel(QObject):
         self._y_label = y_label
         self._y_unit = y_unit
         self._channels: dict[str, ChannelData] = {}
+
+        self.picoscope_handle: PicoScope | None      = None
+        self._picoscope_status = ConnectionStatus.DISCONNECTED
+        self._selected_model: PicoscopeModel | None  = None
+
+        self._active: set[str] = set()
+
+        self._pool = QThreadPool(self)
+        self._pool.setMaxThreadCount(2)
 
     # ------------------------------------------------------------------
     # Meta properties (title / axis labels)
@@ -207,6 +246,72 @@ class GraphViewModel(QObject):
 
     def _next_color(self) -> str:
         return _PALETTE[len(self._channels) % len(_PALETTE)]
+    
+    def _submit(self, key: str, runnable: QRunnable) -> bool:
+        """Submit *runnable* to the pool under *key*.
+
+        Returns False (and does not submit) if that key is already active,
+        preventing duplicate operations from racing each other.
+        """
+        if key in self._active:
+            return False
+        self._active.add(key)
+        self._pool.start(runnable)
+        return True
+
+    def _release(self, key: str) -> None:
+        """Release the active-task guard for *key*."""
+        self._active.discard(key)
+
+    # ------------------------------------------------------------------
+    # Model selection
+    # ------------------------------------------------------------------
+
+    @property
+    def selected_model(self) -> PicoscopeModel | None:
+        return self._selected_model
+
+    def set_model(self, model: PicoscopeModel | None) -> None:
+        if self._selected_model != model:
+            self._selected_model = model
+            self.model_changed.emit(model)
+
+    # ------------------------------------------------------------------
+    # Device control
+    # ------------------------------------------------------------------
+
+    def connect(self, model: PicoscopeModel | None) -> None:
+        """Connect to the Picoscope"""
+        task = _PicoConnectRunnable(model.value if model else "")
+        task.signals.finished.connect(self._on_pico_connected)
+        task.signals.finished.connect(lambda _: self._release("pico_connect"))
+        task.signals.error.connect(self._on_pico_failed)
+        task.signals.error.connect(lambda _: self._release("pico_connect"))
+
+        if not self._submit("pico_connect", task):
+            return False
+
+        self._picoscope_status = ConnectionStatus.CONNECTING
+        self.picoscope_status_changed.emit(self._picoscope_status)
+        return True
+    
+    def disconnect_picoscope(self) -> None:
+        if self.picoscope_handle is not None:
+            self.picoscope_handle.stop_pico()
+        self.picoscope_handle = None
+        self._trigger_configured = False
+        self._picoscope_status = ConnectionStatus.DISCONNECTED
+        self.picoscope_status_changed.emit(self._picoscope_status)
+
+    def _on_pico_connected(self, handle: PicoScope) -> None:
+        self.picoscope_handle = handle
+        self._trigger_configured = False
+        self._picoscope_status = ConnectionStatus.CONNECTED
+        self.picoscope_status_changed.emit(self._picoscope_status)
+
+    def _on_pico_failed(self, _msg: str) -> None:
+        self._picoscope_status = ConnectionStatus.ERROR
+        self.picoscope_status_changed.emit(self._picoscope_status)
 
     # ------------------------------------------------------------------
     # Mock-data factory
