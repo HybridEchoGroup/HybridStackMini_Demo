@@ -55,6 +55,10 @@ class PicoScope(ABC):
         pass
 
     @abstractmethod
+    def pause_pico(self):
+        pass
+
+    @abstractmethod
     def stop_pico(self):
         pass
 

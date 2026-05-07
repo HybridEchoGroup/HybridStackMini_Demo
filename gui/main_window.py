@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSizePolicy, QLabel,
 )
 
-from gui.graph_viewmodel import ConnectionStatus, GraphViewModel, PicoscopeModel
+from gui.graph_viewmodel import AcquisitionStatus, ConnectionStatus, GraphViewModel, PicoscopeModel
 from gui.theme import DARK_PALETTE as P
 
 _STATUS_COLOR = {
@@ -22,6 +22,18 @@ _STATUS_MESSAGE = {
     ConnectionStatus.CONNECTING:   "Connecting...",
     ConnectionStatus.CONNECTED:    "Connected",
     ConnectionStatus.ERROR:        "Connection failed",
+}
+
+_ACQ_COLOR = {
+    AcquisitionStatus.IDLE:    P.text_secondary,
+    AcquisitionStatus.RUNNING: P.secondary_accent,
+    AcquisitionStatus.PAUSED:  P.highlight,
+}
+
+_ACQ_LABEL = {
+    AcquisitionStatus.IDLE:    "Idle",
+    AcquisitionStatus.RUNNING: "Running",
+    AcquisitionStatus.PAUSED:  "Paused",
 }
 
 _MSG_MARGIN   = 12   # px from window edges
@@ -46,15 +58,28 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
 
-        # Status dot — absolute overlay, top-left corner
+        # Top-left overlay: connection dot + acquisition status label
         _DOT = 10
+        _dot_style = "border-radius: 5px;"
+        _lbl_style = f"color: {{}}; font-size: 11px; background: transparent;"
+
         self._status_dot = QLabel(central)
         self._status_dot.setFixedSize(QSize(_DOT, _DOT))
         self._status_dot.move(12, 12)
-        self._status_dot.setStyleSheet(
-            f"background-color: {P.error}; border-radius: {_DOT // 2}px;"
-        )
+        self._status_dot.setStyleSheet(f"background-color: {P.error}; {_dot_style}")
         self._status_dot.raise_()
+
+        self._acq_dot = QLabel(central)
+        self._acq_dot.setFixedSize(QSize(_DOT, _DOT))
+        self._acq_dot.move(12, 30)
+        self._acq_dot.setStyleSheet(f"background-color: {P.text_secondary}; {_dot_style}")
+        self._acq_dot.raise_()
+
+        self._acq_label = QLabel("Idle", central)
+        self._acq_label.setStyleSheet(_lbl_style.format(P.text_secondary))
+        self._acq_label.adjustSize()
+        self._acq_label.move(26, 26)
+        self._acq_label.raise_()
 
         # Status message — absolute overlay, bottom-left corner
         self._msg_label = QLabel("", central)
@@ -121,37 +146,51 @@ class MainWindow(QMainWindow):
         toggle_row.addStretch()
         layout.addLayout(toggle_row)
 
-        # --- Connect button ---
-        self._connect_btn = QPushButton("Connect")
-        self._connect_btn.clicked.connect(self._on_connect_clicked)
-        self._connect_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self._connect_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {P.primary_accent};
-                color: {P.text_primary};
-                border: none;
-                border-radius: 4px;
-                padding: 6px 20px;
-                font-size: 13px;
-            }}
-            QPushButton:hover {{
-                background-color: {P.hover};
-            }}
-            QPushButton:pressed {{
-                background-color: {P.pressed};
-            }}
-        """)
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        btn_row.addWidget(self._connect_btn)
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
+        def _btn(label: str, color: str, slot) -> QPushButton:
+            b = QPushButton(label)
+            b.clicked.connect(slot)
+            b.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            b.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {color};
+                    color: {P.text_primary};
+                    border: none;
+                    border-radius: 4px;
+                    padding: 6px 20px;
+                    font-size: 13px;
+                }}
+                QPushButton:hover   {{ background-color: {P.hover}; }}
+                QPushButton:pressed {{ background-color: {P.pressed}; }}
+            """)
+            return b
+
+        # --- Connect / Disconnect row ---
+        self._connect_btn    = _btn("Connect",    P.primary_accent,    self._on_connect_clicked)
+        self._disconnect_btn = _btn("Disconnect", P.panel,             self._on_disconnect_clicked)
+
+        conn_row = QHBoxLayout()
+        conn_row.addStretch()
+        conn_row.addWidget(self._connect_btn)
+        conn_row.addWidget(self._disconnect_btn)
+        conn_row.addStretch()
+        layout.addLayout(conn_row)
+
+        # --- Start / Pause row ---
+        self._start_btn = _btn("Start", P.secondary_accent, self._on_start_clicked)
+        self._pause_btn = _btn("Pause", P.highlight,        self._on_pause_clicked)
+
+        ctrl_row = QHBoxLayout()
+        ctrl_row.addStretch()
+        ctrl_row.addWidget(self._start_btn)
+        ctrl_row.addWidget(self._pause_btn)
+        ctrl_row.addStretch()
+        layout.addLayout(ctrl_row)
 
         # name → PlotDataItem, kept in sync with the ViewModel's channels
         self._curves: dict[str, pg.PlotDataItem] = {}
 
         self._vm: GraphViewModel | None = None
-        self.set_viewmodel(viewmodel or GraphViewModel.with_mock_data())
+        self.set_viewmodel(viewmodel or GraphViewModel())
 
     # ------------------------------------------------------------------
     # Overlay helpers
@@ -190,6 +229,7 @@ class MainWindow(QMainWindow):
             self._vm.meta_changed.disconnect(self._on_meta_changed)
             self._vm.model_changed.disconnect(self._on_model_changed)
             self._vm.picoscope_status_changed.disconnect(self._on_status_changed)
+            self._vm.acquisition_status_changed.disconnect(self._on_acq_status_changed)
 
         self._vm = vm
         vm.channels_changed.connect(self._on_channels_changed)
@@ -197,6 +237,7 @@ class MainWindow(QMainWindow):
         vm.meta_changed.connect(self._on_meta_changed)
         vm.model_changed.connect(self._on_model_changed)
         vm.picoscope_status_changed.connect(self._on_status_changed)
+        vm.acquisition_status_changed.connect(self._on_acq_status_changed)
 
         self._on_meta_changed()
         self._on_channels_changed()
@@ -205,6 +246,14 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
+
+    def _on_acq_status_changed(self, status: AcquisitionStatus) -> None:
+        color = _ACQ_COLOR.get(status, P.text_secondary)
+        text  = _ACQ_LABEL.get(status, "")
+        self._acq_dot.setStyleSheet(f"background-color: {color}; border-radius: 5px;")
+        self._acq_label.setText(text)
+        self._acq_label.setStyleSheet(f"color: {color}; font-size: 11px; background: transparent;")
+        self._acq_label.adjustSize()
 
     def _on_status_changed(self, status: ConnectionStatus) -> None:
         color = _STATUS_COLOR.get(status, P.error)
@@ -230,6 +279,18 @@ class MainWindow(QMainWindow):
     def _on_connect_clicked(self) -> None:
         assert self._vm is not None
         self._vm.connect(self._vm.selected_model)
+
+    def _on_disconnect_clicked(self) -> None:
+        assert self._vm is not None
+        self._vm.disconnect()
+
+    def _on_start_clicked(self) -> None:
+        assert self._vm is not None
+        self._vm.start()
+
+    def _on_pause_clicked(self) -> None:
+        assert self._vm is not None
+        self._vm.pause()
 
     def _on_meta_changed(self) -> None:
         assert self._vm is not None

@@ -28,10 +28,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
-from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
+from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, QThread, QTimer
 
 from driver.picoscope import PicoScope, create_backend
-from driver.utils import channels, voltage_level
+from driver.utils import channels, voltage_level, timebase
 
 
 # Default colour palette (matplotlib tab10 subset)
@@ -48,8 +48,8 @@ _PALETTE = [
 
 class PicoscopeModel(Enum):
     """Supported PicoScope hardware models."""
-    PS6424E = "6000s"
-    PS3406B = "3000s"
+    PS6424E = "6000"
+    PS3406B = "3000"
 
 class ConnectionStatus(Enum):
     """Connection status for a device."""
@@ -57,6 +57,12 @@ class ConnectionStatus(Enum):
     CONNECTING   = auto()
     CONNECTED    = auto()
     ERROR        = auto()
+
+class AcquisitionStatus(Enum):
+    """Acquisition status enumeration."""
+    IDLE = auto()
+    RUNNING = auto()
+    PAUSED = auto()
 
 @dataclass
 class ChannelData:
@@ -87,6 +93,34 @@ class _PicoConnectRunnable(QRunnable):
         except Exception as e:
             self.signals.error.emit(str(e))
 
+class Pico_data_collector(QObject):
+    collect = pyqtSignal(object)
+    stop_signal = pyqtSignal()
+    
+    def __init__(self, handle: PicoScope):
+        super().__init__()
+        self._pico_handle = handle
+        self._timer = None
+
+    def start(self):
+        self._running = True
+        self._timer = QTimer()
+        self._timer.setInterval(30)  # 30ms
+        self._timer.timeout.connect(self._collect)
+        self.stop_signal.connect(self._stop)
+        self._timer.start()
+
+    def _collect(self):
+        if not self._running:
+            return
+        self._pico_handle.start_data_collect(timebase.Freq_156_25MHz.value)
+        data = self._pico_handle.return_data()
+        self.collect.emit(data)
+
+    def _stop(self):
+        if self._timer:
+            self._timer.stop()
+
 class GraphViewModel(QObject):
     """Holds graph state and notifies the view of changes via signals.
 
@@ -107,8 +141,11 @@ class GraphViewModel(QObject):
     channel_data_changed = pyqtSignal(str)   # carries the channel name
     meta_changed = pyqtSignal()
     model_changed = pyqtSignal(object)       # carries PicoscopeModel | None
+    acquisition_started = pyqtSignal()       # Signals that recording has started 
+    live_data_ready = pyqtSignal()           # Signal for finished acquiring data
 
-    picoscope_status_changed = pyqtSignal(object) 
+    picoscope_status_changed  = pyqtSignal(object)  # carries ConnectionStatus
+    acquisition_status_changed = pyqtSignal(object) # carries AcquisitionStatus
 
     def __init__(self, title: str = "", x_label: str = "Time", x_unit: str = "s",
         y_label: str = "Amplitude", y_unit: str = "V", parent: Optional[QObject] = None) -> None:
@@ -129,6 +166,8 @@ class GraphViewModel(QObject):
 
         self._pool = QThreadPool(self)
         self._pool.setMaxThreadCount(2)
+
+        self.dataB = np.array([])
 
     # ------------------------------------------------------------------
     # Meta properties (title / axis labels)
@@ -227,6 +266,20 @@ class GraphViewModel(QObject):
         ch.x = np.asarray(x, dtype=float)
         ch.y = np.asarray(y, dtype=float)
         self.channel_data_changed.emit(name)
+    
+    def emit_live_data(self, data) -> None:
+        """Receive a data block from the collector and push it to the graph.
+
+        Silently skips the update when data is None or empty so the graph
+        never stalls waiting on a block that isn't ready yet.
+        """
+        if data is None or len(data) == 0:
+            return
+
+        self.dataB = data[:, 1]
+        x = np.arange(len(self.dataB), dtype=float)
+        self.update_channel("CH B", x, self.dataB)
+        self.live_data_ready.emit()
 
     # ------------------------------------------------------------------
     # Read-only access
@@ -295,6 +348,39 @@ class GraphViewModel(QObject):
         self.picoscope_status_changed.emit(self._picoscope_status)
         return True
     
+    def disconnect(self) -> None:
+        """Disconnect from the Picoscope"""
+        self.disconnect_picoscope()
+
+    def start(self) -> None:
+        self.picoscope_handle.enable_channel_A(voltage_level.V1_v)
+        self.picoscope_handle.enable_channel_B(voltage_level.V1_v)
+        self.picoscope_handle.autotrigger(channels.Channel_A, voltage_level.V1_v)
+        #self.picoscope_handle.setup_trigger(voltage_level.V1_v, 500, channels.Channel_A)
+
+        self.sr_thread = QThread()
+        self.sr_worker = Pico_data_collector(self.picoscope_handle)
+        self.sr_worker.moveToThread(self.sr_thread)
+        self.sr_worker.collect.connect(self.emit_live_data)
+        self.sr_thread.started.connect(self.sr_worker.start)
+        self.sr_thread.finished.connect(self.sr_worker.deleteLater)
+        self.sr_thread.finished.connect(self.sr_thread.deleteLater)
+        self.sr_thread.start()
+
+        self._acquisition_status = AcquisitionStatus.RUNNING
+        self.acquisition_status_changed.emit(self._acquisition_status)
+        self.acquisition_started.emit()
+
+    def pause(self) -> None:
+        if hasattr(self, 'sr_worker'):
+            self.sr_worker.stop_signal.emit()
+        if hasattr(self, 'sr_thread'):
+            self.sr_thread.quit()
+
+        self._acquisition_status = AcquisitionStatus.IDLE
+        self.acquisition_status_changed.emit(self._acquisition_status)
+        self.picoscope_handle.pause_pico()
+
     def disconnect_picoscope(self) -> None:
         if self.picoscope_handle is not None:
             self.picoscope_handle.stop_pico()
