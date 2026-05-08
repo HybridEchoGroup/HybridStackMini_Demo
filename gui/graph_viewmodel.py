@@ -360,8 +360,8 @@ class GraphViewModel(QObject):
     def start(self) -> None:
         self.picoscope_handle.enable_channel_A(voltage_level.V1_v)
         self.picoscope_handle.enable_channel_B(voltage_level.V1_v)
-        self.picoscope_handle.autotrigger(channels.Channel_A, voltage_level.V1_v)
-        #self.picoscope_handle.setup_trigger(voltage_level.V1_v, 500, channels.Channel_A)
+        #self.picoscope_handle.autotrigger(channels.Channel_A, voltage_level.V1_v)
+        self.picoscope_handle.setup_trigger(voltage_level.V1_v, 500, channels.Channel_A)
 
         self.sr_thread = QThread()
         self.sr_worker = Pico_data_collector(self.picoscope_handle)

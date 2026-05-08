@@ -1,12 +1,17 @@
 """Main application window (View layer)."""
 
+from pathlib import Path
+
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import QSize, QTimer
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import QSize, Qt, QTimer
+from PyQt6.QtGui import QColor, QPixmap
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSizePolicy, QLabel,
 )
+
+_ASSETS = Path(__file__).parent.parent / "assets"
+_LOGO_H = 50  # logo height in pixels
 
 from gui.graph_viewmodel import (
     AcquisitionStatus, ConnectionStatus, GraphViewModel, N_SAMPLES, PicoscopeModel,
@@ -102,6 +107,18 @@ class MainWindow(QMainWindow):
         self._msg_timer = QTimer(self)
         self._msg_timer.setSingleShot(True)
         self._msg_timer.timeout.connect(self._msg_label.hide)
+
+        def _logo_label(filename: str) -> QLabel:
+            lbl = QLabel(central)
+            lbl.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+            px = QPixmap(str(_ASSETS / filename))
+            lbl.setPixmap(px.scaledToHeight(_LOGO_H, Qt.TransformationMode.SmoothTransformation))
+            lbl.adjustSize()
+            lbl.raise_()
+            return lbl
+
+        self._logo_left  = _logo_label("ekfz_logo.png")
+        self._logo_right = _logo_label("hybridecho_logo.png")
 
         layout = QVBoxLayout(central)
         layout.setContentsMargins(120, 32, 120, 32)
@@ -229,6 +246,8 @@ class MainWindow(QMainWindow):
         self._vm: GraphViewModel | None = None
         self.set_viewmodel(viewmodel or GraphViewModel())
 
+        QTimer.singleShot(0, self._reposition_logos)
+
     # ------------------------------------------------------------------
     # Overlay helpers
     # ------------------------------------------------------------------
@@ -249,10 +268,20 @@ class MainWindow(QMainWindow):
         lh = self._msg_label.height()
         self._msg_label.move(_MSG_MARGIN, h - lh - _MSG_MARGIN)
 
+    def _reposition_logos(self) -> None:
+        cw = self.centralWidget()
+        if cw is None:
+            return
+        w, h = cw.width(), cw.height()
+        m = _MSG_MARGIN
+        self._logo_left.move(m, h - self._logo_left.height() - m)
+        self._logo_right.move(w - self._logo_right.width() - m, h - self._logo_right.height() - m)
+
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
         if self._msg_label.isVisible():
             self._reposition_msg_label()
+        self._reposition_logos()
 
     # ------------------------------------------------------------------
     # ViewModel binding
