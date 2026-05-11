@@ -17,7 +17,7 @@ from gui.graph_viewmodel import (
     AcquisitionStatus, ConnectionStatus, GraphViewModel, N_SAMPLES, PicoscopeModel,
     SAMPLE_RATE, V_RANGE,
 )
-from gui.matched_filter_viewmodel import MatchedFilterViewModel
+from gui.matched_filter_viewmodel import MatchedFilterViewModel, MF_MAX_DEPTH_M
 from gui.theme import DARK_PALETTE as P
 
 _STATUS_COLOR = {
@@ -151,14 +151,14 @@ class MainWindow(QMainWindow):
         self._mf_plot.showGrid(x=True, y=True, alpha=0.4)
         self._mf_plot.getPlotItem().getAxis("bottom").setPen(pg.mkPen(P.border))
         self._mf_plot.getPlotItem().getAxis("left").setPen(pg.mkPen(P.border))
-        self._mf_plot.setLabel("bottom", "Time", units="s",
+        self._mf_plot.setLabel("bottom", "Depth", units="m",
                                **{"color": P.text_secondary, "font-size": "10pt"})
         self._mf_plot.setLabel("left", "Correlation",
                                units="dBFS", **{"color": P.text_secondary, "font-size": "10pt"})
         self._mf_plot.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
-        self._mf_plot.setXRange(0, _duration, padding=0)
+        self._mf_plot.setXRange(0, MF_MAX_DEPTH_M, padding=0)
         self._mf_plot.setYRange(-80, 0, padding=0)
-        self._mf_plot.setLimits(xMin=0, xMax=_duration, yMin=-120, yMax=0)
+        self._mf_plot.setLimits(xMin=0, xMax=MF_MAX_DEPTH_M, yMin=-120, yMax=0)
         self._mf_plot.setMouseEnabled(x=True, y=True)
         self._mf_plot.setDownsampling(auto=True, mode="peak")
         self._mf_plot.setClipToView(True)

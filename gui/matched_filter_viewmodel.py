@@ -21,6 +21,10 @@ from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
 
 from gui.graph_viewmodel import N_SAMPLES, SAMPLE_RATE, _TIME_AXIS
 
+SOUND_SPEED_WATER = 1480.0                          # m/s
+_DISTANCE_AXIS    = _TIME_AXIS * SOUND_SPEED_WATER / 2.0   # one-way depth (m)
+MF_MAX_DEPTH_M    = float(_DISTANCE_AXIS[-1])       # ~1.48 m
+
 
 class _FilterWorker(QRunnable):
     """Runs one matched-filter pass off the GUI thread."""
@@ -38,7 +42,7 @@ class _FilterWorker(QRunnable):
         if peak > 0:
             output = output / peak
         output = 20.0 * np.log10(np.maximum(output, 1e-6))  # floor at -120 dB
-        self._cb(_TIME_AXIS, output)
+        self._cb(_DISTANCE_AXIS, output)
 
 
 class MatchedFilterViewModel(QObject):
