@@ -3,7 +3,7 @@
 Usage
 -----
     mf_vm = MatchedFilterViewModel()
-    mf_vm.load_reference("path/to/reference.bin")   # float32 binary file
+    mf_vm.load_reference("path/to/reference.bin")   # int16 binary file
 
     # Wire to the main acquisition VM:
     main_vm.live_data_ready.connect(lambda: mf_vm.process(main_vm.dataB))
@@ -17,9 +17,28 @@ from __future__ import annotations
 from typing import Optional
 
 import numpy as np
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
 
 from gui.graph_viewmodel import N_SAMPLES, SAMPLE_RATE, _TIME_AXIS
+
+
+class _FilterWorker(QRunnable):
+    """Runs one matched-filter pass off the GUI thread."""
+
+    def __init__(self, data: np.ndarray, ref_fft: np.ndarray, callback) -> None:
+        super().__init__()
+        self._data    = data
+        self._ref_fft = ref_fft
+        self._cb      = callback
+
+    def run(self) -> None:
+        sig_fft = np.fft.rfft(self._data, n=N_SAMPLES)
+        output  = np.abs(np.fft.irfft(sig_fft * self._ref_fft, n=N_SAMPLES))
+        peak = output.max()
+        if peak > 0:
+            output = output / peak
+        output = 20.0 * np.log10(np.maximum(output, 1e-6))  # floor at -120 dB
+        self._cb(_TIME_AXIS, output)
 
 
 class MatchedFilterViewModel(QObject):
@@ -41,14 +60,26 @@ class MatchedFilterViewModel(QObject):
         super().__init__(parent)
         self._reference: np.ndarray | None = None
         self._ref_fft:   np.ndarray | None = None   # cached FFT of reference
+        self._busy       = False
+        self._pool       = QThreadPool.globalInstance()
+        self.load_default_reference()
+
+    @staticmethod
+    def make_sine_reference(frequency: float = 7e6) -> np.ndarray:
+        """Return a sine wave at *frequency* Hz sampled at SAMPLE_RATE over N_SAMPLES."""
+        return np.sin(2 * np.pi * frequency * _TIME_AXIS)
+
+    def load_default_reference(self) -> None:
+        """Set the reference to a 7 MHz sine wave."""
+        self.set_reference(self.make_sine_reference(7e6))
 
     # ------------------------------------------------------------------
     # Reference management
     # ------------------------------------------------------------------
 
     def load_reference(self, path: str) -> None:
-        """Load reference signal from a flat float32 binary file."""
-        ref = np.fromfile(path, dtype=np.float32).astype(float)
+        """Load reference signal from a flat int16 binary file."""
+        ref = np.fromfile(path, dtype=np.int16).astype(float)
         self.set_reference(ref)
 
     def set_reference(self, array: np.ndarray) -> None:
@@ -67,13 +98,23 @@ class MatchedFilterViewModel(QObject):
     # ------------------------------------------------------------------
 
     def process(self, data: np.ndarray) -> None:
-        """Apply the matched filter to *data* and emit result_ready.
+        """Submit a matched-filter job to the thread pool.
 
-        Silently skips if data is empty or no reference has been loaded.
+        Drops the frame if a previous job is still running so that the
+        GUI never accumulates a backlog during fast acquisitions.
         """
         if self._ref_fft is None or data is None or len(data) == 0:
             return
+        if self._busy:
+            return
 
-        sig_fft = np.fft.rfft(data, n=N_SAMPLES)
-        output  = np.abs(np.fft.irfft(sig_fft * self._ref_fft, n=N_SAMPLES))
-        self.result_ready.emit(_TIME_AXIS, output)
+        self._busy  = True
+        ref_fft_snapshot = self._ref_fft   # capture ref under the current lock
+        worker = _FilterWorker(
+            data.copy(), ref_fft_snapshot, self._on_result
+        )
+        self._pool.start(worker)
+
+    def _on_result(self, x: np.ndarray, y: np.ndarray) -> None:
+        self._busy = False
+        self.result_ready.emit(x, y)

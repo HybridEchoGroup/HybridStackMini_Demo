@@ -127,6 +127,18 @@ class Pico_data_collector(QObject):
         if self._timer:
             self._timer.stop()
 
+class _DataProcessor(QObject):
+    """Extracts and converts channel data off the GUI thread."""
+
+    data_ready = pyqtSignal(object, object)   # time_axis (float64), dataB (float64)
+
+    def process(self, data) -> None:
+        if data is None or len(data) == 0:
+            return
+        dataB = data[:, 1].astype(np.float64, copy=False)
+        self.data_ready.emit(_TIME_AXIS, dataB)
+
+
 class GraphViewModel(QObject):
     """Holds graph state and notifies the view of changes via signals.
 
@@ -269,21 +281,14 @@ class GraphViewModel(QObject):
             return
 
         ch = self._channels[name]
-        ch.x = np.asarray(x, dtype=float)
-        ch.y = np.asarray(y, dtype=float)
+        ch.x = x if (isinstance(x, np.ndarray) and x.dtype == np.float64) else np.asarray(x, dtype=np.float64)
+        ch.y = y if (isinstance(y, np.ndarray) and y.dtype == np.float64) else np.asarray(y, dtype=np.float64)
         self.channel_data_changed.emit(name)
     
-    def emit_live_data(self, data) -> None:
-        """Receive a data block from the collector and push it to the graph.
-
-        Silently skips the update when data is None or empty so the graph
-        never stalls waiting on a block that isn't ready yet.
-        """
-        if data is None or len(data) == 0:
-            return
-
-        self.dataB = data[:, 1]
-        self.update_channel("CH B", _TIME_AXIS, self.dataB)
+    def _on_data_processed(self, time_axis: np.ndarray, dataB: np.ndarray) -> None:
+        """Receive already-converted arrays from _DataProcessor and update the graph."""
+        self.dataB = dataB
+        self.update_channel("CH B", time_axis, dataB)
         self.live_data_ready.emit()
 
     # ------------------------------------------------------------------
@@ -363,13 +368,24 @@ class GraphViewModel(QObject):
         #self.picoscope_handle.autotrigger(channels.Channel_A, voltage_level.V1_v)
         self.picoscope_handle.setup_trigger(voltage_level.V1_v, 500, channels.Channel_A)
 
+        # Acquisition thread
         self.sr_thread = QThread()
         self.sr_worker = Pico_data_collector(self.picoscope_handle)
         self.sr_worker.moveToThread(self.sr_thread)
-        self.sr_worker.collect.connect(self.emit_live_data)
         self.sr_thread.started.connect(self.sr_worker.start)
         self.sr_thread.finished.connect(self.sr_worker.deleteLater)
         self.sr_thread.finished.connect(self.sr_thread.deleteLater)
+
+        # Processing thread: dtype conversion stays off the GUI thread
+        self._proc_thread = QThread()
+        self._processor = _DataProcessor()
+        self._processor.moveToThread(self._proc_thread)
+        self.sr_worker.collect.connect(self._processor.process)
+        self._processor.data_ready.connect(self._on_data_processed)
+        self._proc_thread.finished.connect(self._processor.deleteLater)
+        self._proc_thread.finished.connect(self._proc_thread.deleteLater)
+
+        self._proc_thread.start()
         self.sr_thread.start()
 
         self._acquisition_status = AcquisitionStatus.RUNNING
@@ -381,6 +397,8 @@ class GraphViewModel(QObject):
             self.sr_worker.stop_signal.emit()
         if hasattr(self, 'sr_thread'):
             self.sr_thread.quit()
+        if hasattr(self, '_proc_thread'):
+            self._proc_thread.quit()
 
         self._acquisition_status = AcquisitionStatus.IDLE
         self.acquisition_status_changed.emit(self._acquisition_status)

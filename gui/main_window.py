@@ -132,6 +132,8 @@ class MainWindow(QMainWindow):
         self._plot_widget.getPlotItem().getAxis("bottom").setPen(pg.mkPen(P.border))
         self._plot_widget.getPlotItem().getAxis("left").setPen(pg.mkPen(P.border))
         self._plot_widget.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
+        self._plot_widget.setDownsampling(auto=True, mode="peak")
+        self._plot_widget.setClipToView(True)
 
         # Y axis: fixed to ±V_RANGE, mouse interaction disabled
         # X axis: interactive zoom/pan, clamped to the data window
@@ -152,11 +154,14 @@ class MainWindow(QMainWindow):
         self._mf_plot.setLabel("bottom", "Time", units="s",
                                **{"color": P.text_secondary, "font-size": "10pt"})
         self._mf_plot.setLabel("left", "Correlation",
-                               **{"color": P.text_secondary, "font-size": "10pt"})
+                               units="dBFS", **{"color": P.text_secondary, "font-size": "10pt"})
         self._mf_plot.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
         self._mf_plot.setXRange(0, _duration, padding=0)
-        self._mf_plot.setLimits(xMin=0, xMax=_duration)
+        self._mf_plot.setYRange(-80, 0, padding=0)
+        self._mf_plot.setLimits(xMin=0, xMax=_duration, yMin=-120, yMax=0)
         self._mf_plot.setMouseEnabled(x=True, y=True)
+        self._mf_plot.setDownsampling(auto=True, mode="peak")
+        self._mf_plot.setClipToView(True)
         self._mf_curve = self._mf_plot.plot(
             [], [], pen=pg.mkPen(color=P.secondary_accent, width=2)
         )
