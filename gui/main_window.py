@@ -126,6 +126,7 @@ class MainWindow(QMainWindow):
 
         pg.setConfigOption("background", P.plot_background)
         pg.setConfigOption("foreground", P.text_secondary)
+        pg.setConfigOption("useOpenGL", True)
 
         self._plot_widget = pg.PlotWidget()
         self._plot_widget.showGrid(x=True, y=True, alpha=0.4)
