@@ -114,9 +114,7 @@ class MatchedFilterViewModel(QObject):
 
         self._busy  = True
         ref_fft_snapshot = self._ref_fft   # capture ref under the current lock
-        worker = _FilterWorker(
-            data.copy(), ref_fft_snapshot, self._on_result
-        )
+        worker = _FilterWorker(data, ref_fft_snapshot, self._on_result)
         self._pool.start(worker)
 
     def _on_result(self, x: np.ndarray, y: np.ndarray) -> None:
