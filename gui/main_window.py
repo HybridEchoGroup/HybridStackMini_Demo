@@ -52,11 +52,9 @@ _MSG_DURATION = 3000 # ms
 
 
 class MainWindow(QMainWindow):
-    """View — owns no data, reacts to GraphViewModel signals.
-
-    channels_changed      → full structural rebuild of curve items
-    channel_data_changed  → in-place setData() on a single curve (fast path)
-    meta_changed          → update title / axis labels only
+    """Main Window view 
+        -> everything data or work related is shifted to viewmodels 
+        and threads
     """
 
     def __init__(self, viewmodel: GraphViewModel | None = None) -> None:
@@ -79,6 +77,12 @@ class MainWindow(QMainWindow):
         self._status_dot.move(12, 12)
         self._status_dot.setStyleSheet(f"background-color: {P.error}; {_dot_style}")
         self._status_dot.raise_()
+
+        self._status_label = QLabel("Idle", central)
+        self._status_label.setStyleSheet(_lbl_style.format(P.text_secondary))
+        self._status_label.adjustSize()
+        self._status_label.move(26, 8)
+        self._status_label.raise_()
 
         self._acq_dot = QLabel(central)
         self._acq_dot.setFixedSize(QSize(_DOT, _DOT))
@@ -354,10 +358,12 @@ class MainWindow(QMainWindow):
 
     def _on_status_changed(self, status: ConnectionStatus) -> None:
         color = _STATUS_COLOR.get(status, P.error)
-        self._status_dot.setStyleSheet(
-            f"background-color: {color}; border-radius: 5px;"
-        )
+        text  = _STATUS_MESSAGE.get(status, "")
+        self._status_dot.setStyleSheet(f"background-color: {color}; border-radius: 5px;")
         self._show_message(_STATUS_MESSAGE.get(status, "Unknown status"))
+        self._status_label.setText(text)
+        self._status_label.setStyleSheet(f"color: {color}; font-size: 11px; background: transparent;")
+        self._status_label.adjustSize()
 
     def _on_model_toggled(self, model: PicoscopeModel, checked: bool) -> None:
         assert self._vm is not None

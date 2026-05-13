@@ -1,6 +1,7 @@
 """HybridStackMini Demo
 
-Entry point for the application.
+Run this file with uv run main.py
+from the main directory to start the program.
 """
 
 import sys
@@ -11,7 +12,6 @@ from gui.main_window import MainWindow
 
 
 def main() -> None:
-    """Application entry point."""
     app = QApplication(sys.argv)
     app.setApplicationName("HybridStackMini Demo")
     app.setOrganizationName("HybridEcho")
