@@ -8,6 +8,7 @@ from PyQt6.QtCore import QSize, Qt, QTimer
 from PyQt6.QtGui import QColor, QPixmap
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSizePolicy, QLabel,
+    QFileDialog,
 )
 
 _ASSETS = Path(__file__).parent.parent / "assets"
@@ -17,7 +18,7 @@ from gui.graph_viewmodel import (
     AcquisitionStatus, ConnectionStatus, GraphViewModel, N_SAMPLES, PicoscopeModel,
     SAMPLE_RATE, V_RANGE,
 )
-from gui.matched_filter_viewmodel import MatchedFilterViewModel, MF_MAX_DEPTH_M
+from gui.matched_filter_viewmodel import MatchedFilterViewModel
 from gui.theme import DARK_PALETTE as P
 
 _STATUS_COLOR = {
@@ -154,10 +155,10 @@ class MainWindow(QMainWindow):
         self._mf_plot.setLabel("left", "Correlation",
                                units="dBFS", **{"color": P.text_secondary, "font-size": "10pt"})
         self._mf_plot.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
-        self._mf_plot.setXRange(0, MF_MAX_DEPTH_M, padding=0)
-        self._mf_plot.setYRange(-80, 0, padding=0)
-        self._mf_plot.setLimits(xMin=0, xMax=MF_MAX_DEPTH_M, yMin=-120, yMax=0)
-        self._mf_plot.setMouseEnabled(x=True, y=True)
+        self._mf_plot.setXRange(0, 0.2, padding=0)
+        self._mf_plot.setYRange(-120, 0, padding=0)
+        self._mf_plot.setLimits(xMin=0, xMax=0.2, yMin=-120, yMax=0)
+        self._mf_plot.setMouseEnabled(x=True, y=False)
         self._mf_curve = self._mf_plot.plot(
             [], [], pen=pg.mkPen(color=P.secondary_accent, width=2)
         )
@@ -240,6 +241,26 @@ class MainWindow(QMainWindow):
         ctrl_row.addWidget(self._pause_btn)
         ctrl_row.addStretch()
         layout.addLayout(ctrl_row)
+
+        # --- Load Reference row ---
+        self._load_ref_btn = _btn("Load Reference", P.panel, self._on_load_reference_clicked)
+        self._load_ref_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {P.panel};
+                color: {P.text_secondary};
+                border: 1px solid {P.border};
+                border-radius: 4px;
+                padding: 6px 20px;
+                font-size: 13px;
+            }}
+            QPushButton:hover   {{ background-color: {P.hover}; color: {P.text_primary}; }}
+            QPushButton:pressed {{ background-color: {P.pressed}; }}
+        """)
+        ref_row = QHBoxLayout()
+        ref_row.addStretch()
+        ref_row.addWidget(self._load_ref_btn)
+        ref_row.addStretch()
+        layout.addLayout(ref_row)
 
         # name → PlotDataItem, kept in sync with the ViewModel's channels
         self._curves: dict[str, pg.PlotDataItem] = {}
@@ -367,6 +388,14 @@ class MainWindow(QMainWindow):
     def _on_pause_clicked(self) -> None:
         assert self._vm is not None
         self._vm.pause()
+
+    def _on_load_reference_clicked(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Reference Signal", "", "Binary files (*.bin);;All files (*)"
+        )
+        if path:
+            self._mf_vm.load_reference(path)
+            self._show_message(f"Reference loaded: {Path(path).name}")
 
     def _on_meta_changed(self) -> None:
         assert self._vm is not None
