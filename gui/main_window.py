@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
 )
 
 _ASSETS = Path(__file__).parent.parent / "assets"
-_LOGO_H = 50  # logo height in pixels
+_LOGO_H = 90  # logo height in pixels
 
 from gui.graph_viewmodel import (
     AcquisitionStatus, ConnectionStatus, GraphViewModel, N_SAMPLES, PicoscopeModel,
