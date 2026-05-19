@@ -111,7 +111,7 @@ class Pico_data_collector(QObject):
     def start(self):
         self._running = True
         self._timer = QTimer()
-        self._timer.setInterval(300)  # 30ms
+        self._timer.setInterval(300)  # 300ms
         self._timer.timeout.connect(self._collect)
         self.stop_signal.connect(self._stop)
         self._timer.start()
