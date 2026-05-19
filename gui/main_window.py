@@ -154,9 +154,9 @@ class MainWindow(QMainWindow):
         self._mf_plot.setLabel("left", "Correlation",
                                units="dBFS", **{"color": P.text_secondary, "font-size": "10pt"})
         self._mf_plot.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
-        self._mf_plot.setXRange(0, 0.2, padding=0)
+        self._mf_plot.setXRange(0, 0.1, padding=0)
         self._mf_plot.setYRange(-120, 0, padding=0)
-        self._mf_plot.setLimits(xMin=0, xMax=0.2, yMin=-120, yMax=0)
+        self._mf_plot.setLimits(xMin=0, xMax=0.1, yMin=-120, yMax=0)
         self._mf_plot.setMouseEnabled(x=True, y=False)
         self._mf_curve = self._mf_plot.plot(
             [], [], pen=pg.mkPen(color=P.secondary_accent, width=2)
@@ -443,7 +443,7 @@ class MainWindow(QMainWindow):
         self._mf_vm.process(self._vm.dataB)
 
     def _on_mf_result(self, x: np.ndarray, y: np.ndarray) -> None:
-        self._mf_curve.setData(x, y)
+        self._mf_curve.setData(x / 2, y)
 
     def _on_acq_status_changed(self, status: AcquisitionStatus) -> None:
         self._current_acq_status = status
