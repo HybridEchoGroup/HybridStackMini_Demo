@@ -5,40 +5,28 @@ from pathlib import Path
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import QSize, Qt, QTimer
-from PyQt6.QtGui import QColor, QPixmap
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSizePolicy, QLabel,
     QFileDialog,
 )
 
 _ASSETS = Path(__file__).parent.parent / "assets"
-_LOGO_H = 90  # logo height in pixels
+_LOGO_H = 90          # logo height for dark-mode HE logo
+_LOGO_H_LIGHT_HE = 135  # compensates for the narrower aspect ratio of the light-mode HE logo
 
 from gui.graph_viewmodel import (
     AcquisitionStatus, ConnectionStatus, GraphViewModel, N_SAMPLES, PicoscopeModel,
     SAMPLE_RATE, V_RANGE,
 )
 from gui.matched_filter_viewmodel import MatchedFilterViewModel
-from gui.theme import DARK_PALETTE as P
-
-_STATUS_COLOR = {
-    ConnectionStatus.DISCONNECTED: P.error,
-    ConnectionStatus.CONNECTING:   P.highlight,
-    ConnectionStatus.CONNECTED:    P.secondary_accent,
-    ConnectionStatus.ERROR:        P.error,
-}
+from gui.theme import DARK_PALETTE, LIGHT_PALETTE
 
 _STATUS_MESSAGE = {
     ConnectionStatus.DISCONNECTED: "Disconnected",
     ConnectionStatus.CONNECTING:   "Connecting...",
     ConnectionStatus.CONNECTED:    "Connected",
     ConnectionStatus.ERROR:        "Connection failed",
-}
-
-_ACQ_COLOR = {
-    AcquisitionStatus.IDLE:    P.text_secondary,
-    AcquisitionStatus.RUNNING: P.secondary_accent,
-    AcquisitionStatus.PAUSED:  P.highlight,
 }
 
 _ACQ_LABEL = {
@@ -49,19 +37,27 @@ _ACQ_LABEL = {
 
 _MSG_MARGIN   = 12   # px from window edges
 _MSG_DURATION = 3000 # ms
+_THEME_BTN_SIZE = 28
 
 
 class MainWindow(QMainWindow):
-    """Main Window view 
-        -> everything data or work related is shifted to viewmodels 
+    """Main Window view
+        -> everything data or work related is shifted to viewmodels
         and threads
     """
 
     def __init__(self, viewmodel: GraphViewModel | None = None) -> None:
         super().__init__()
+
+        self._palette = DARK_PALETTE
+        self._is_dark = True
+        self._current_conn_status = ConnectionStatus.DISCONNECTED
+        self._current_acq_status = AcquisitionStatus.IDLE
+
         self.setWindowTitle("HybridStackMini Demo")
         self.resize(900, 500)
 
+        P = self._palette
         self.setStyleSheet(f"background-color: {P.background};")
 
         central = QWidget()
@@ -70,7 +66,7 @@ class MainWindow(QMainWindow):
         # Top-left overlay: connection dot + acquisition status label
         _DOT = 10
         _dot_style = "border-radius: 5px;"
-        _lbl_style = f"color: {{}}; font-size: 11px; background: transparent;"
+        _lbl_style = "color: {}; font-size: 11px; background: transparent;"
 
         self._status_dot = QLabel(central)
         self._status_dot.setFixedSize(QSize(_DOT, _DOT))
@@ -96,16 +92,17 @@ class MainWindow(QMainWindow):
         self._acq_label.move(26, 26)
         self._acq_label.raise_()
 
+        # Top-right overlay: dark/light mode toggle
+        self._theme_btn = QPushButton("☀", central)
+        self._theme_btn.setFixedSize(QSize(_THEME_BTN_SIZE, _THEME_BTN_SIZE))
+        self._theme_btn.setToolTip("Switch to light mode")
+        self._theme_btn.setStyleSheet(self._theme_btn_style())
+        self._theme_btn.clicked.connect(self._toggle_theme)
+        self._theme_btn.raise_()
+
         # Status message — absolute overlay, bottom-left corner
         self._msg_label = QLabel("", central)
-        self._msg_label.setStyleSheet(f"""
-            color: {P.text_secondary};
-            background-color: {P.panel};
-            border: 1px solid {P.border};
-            border-radius: 4px;
-            padding: 3px 8px;
-            font-size: 11px;
-        """)
+        self._msg_label.setStyleSheet(self._msg_style())
         self._msg_label.hide()
         self._msg_label.raise_()
 
@@ -138,8 +135,6 @@ class MainWindow(QMainWindow):
         self._plot_widget.getPlotItem().getAxis("bottom").setPen(pg.mkPen(P.border))
         self._plot_widget.getPlotItem().getAxis("left").setPen(pg.mkPen(P.border))
         self._plot_widget.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
-        # Y axis: fixed to ±V_RANGE, mouse interaction disabled
-        # X axis: interactive zoom/pan, clamped to the data window
         _duration = N_SAMPLES / SAMPLE_RATE        # 0.002 s
         self._plot_widget.setXRange(0, _duration, padding=0)
         self._plot_widget.setYRange(-V_RANGE, V_RANGE, padding=0)
@@ -173,25 +168,6 @@ class MainWindow(QMainWindow):
         self._mf_vm.result_ready.connect(self._on_mf_result)
 
         # --- Model toggle buttons ---
-        toggle_style = f"""
-            QPushButton {{
-                background-color: {P.panel};
-                color: {P.text_secondary};
-                border: 1px solid {P.border};
-                border-radius: 4px;
-                padding: 5px 16px;
-                font-size: 12px;
-            }}
-            QPushButton:hover {{
-                background-color: {P.hover};
-                color: {P.text_primary};
-            }}
-            QPushButton:checked {{
-                background-color: {P.primary_accent};
-                color: {P.text_primary};
-                border-color: {P.primary_accent};
-            }}
-        """
         self._model_buttons: dict[PicoscopeModel, QPushButton] = {}
         toggle_row = QHBoxLayout()
         toggle_row.addStretch()
@@ -199,7 +175,7 @@ class MainWindow(QMainWindow):
             btn = QPushButton(model.name)
             btn.setCheckable(True)
             btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            btn.setStyleSheet(toggle_style)
+            btn.setStyleSheet(self._toggle_style())
             btn.clicked.connect(lambda checked, m=model: self._on_model_toggled(m, checked))
             self._model_buttons[model] = btn
             toggle_row.addWidget(btn)
@@ -210,18 +186,7 @@ class MainWindow(QMainWindow):
             b = QPushButton(label)
             b.clicked.connect(slot)
             b.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            b.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {color};
-                    color: {P.text_primary};
-                    border: none;
-                    border-radius: 4px;
-                    padding: 6px 20px;
-                    font-size: 13px;
-                }}
-                QPushButton:hover   {{ background-color: {P.hover}; }}
-                QPushButton:pressed {{ background-color: {P.pressed}; }}
-            """)
+            b.setStyleSheet(self._action_btn_style(color))
             return b
 
         # --- Connect / Disconnect row ---
@@ -248,18 +213,7 @@ class MainWindow(QMainWindow):
 
         # --- Load Reference row ---
         self._load_ref_btn = _btn("Load Reference", P.panel, self._on_load_reference_clicked)
-        self._load_ref_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {P.panel};
-                color: {P.text_secondary};
-                border: 1px solid {P.border};
-                border-radius: 4px;
-                padding: 6px 20px;
-                font-size: 13px;
-            }}
-            QPushButton:hover   {{ background-color: {P.hover}; color: {P.text_primary}; }}
-            QPushButton:pressed {{ background-color: {P.pressed}; }}
-        """)
+        self._load_ref_btn.setStyleSheet(self._load_ref_style())
         ref_row = QHBoxLayout()
         ref_row.addStretch()
         ref_row.addWidget(self._load_ref_btn)
@@ -272,7 +226,149 @@ class MainWindow(QMainWindow):
         self._vm: GraphViewModel | None = None
         self.set_viewmodel(viewmodel or GraphViewModel())
 
-        QTimer.singleShot(0, self._reposition_logos)
+        QTimer.singleShot(0, self._reposition_overlays)
+
+    # ------------------------------------------------------------------
+    # Style helpers
+    # ------------------------------------------------------------------
+
+    def _toggle_style(self) -> str:
+        P = self._palette
+        return f"""
+            QPushButton {{
+                background-color: {P.panel};
+                color: {P.text_secondary};
+                border: 1px solid {P.border};
+                border-radius: 4px;
+                padding: 5px 16px;
+                font-size: 12px;
+            }}
+            QPushButton:hover {{
+                background-color: {P.hover};
+                color: {P.text_primary};
+            }}
+            QPushButton:checked {{
+                background-color: {P.primary_accent};
+                color: {P.text_primary};
+                border-color: {P.primary_accent};
+            }}
+        """
+
+    def _action_btn_style(self, color: str) -> str:
+        P = self._palette
+        return f"""
+            QPushButton {{
+                background-color: {color};
+                color: {P.text_primary};
+                border: none;
+                border-radius: 4px;
+                padding: 6px 20px;
+                font-size: 13px;
+            }}
+            QPushButton:hover   {{ background-color: {P.hover}; }}
+            QPushButton:pressed {{ background-color: {P.pressed}; }}
+        """
+
+    def _load_ref_style(self) -> str:
+        P = self._palette
+        return f"""
+            QPushButton {{
+                background-color: {P.panel};
+                color: {P.text_secondary};
+                border: 1px solid {P.border};
+                border-radius: 4px;
+                padding: 6px 20px;
+                font-size: 13px;
+            }}
+            QPushButton:hover   {{ background-color: {P.hover}; color: {P.text_primary}; }}
+            QPushButton:pressed {{ background-color: {P.pressed}; }}
+        """
+
+    def _theme_btn_style(self) -> str:
+        P = self._palette
+        return f"""
+            QPushButton {{
+                background-color: {P.panel};
+                color: {P.text_primary};
+                border: 1px solid {P.border};
+                border-radius: 4px;
+                font-size: 15px;
+                padding: 0px;
+            }}
+            QPushButton:hover   {{ background-color: {P.hover}; }}
+            QPushButton:pressed {{ background-color: {P.pressed}; }}
+        """
+
+    def _msg_style(self) -> str:
+        P = self._palette
+        return f"""
+            color: {P.text_secondary};
+            background-color: {P.panel};
+            border: 1px solid {P.border};
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-size: 11px;
+        """
+
+    # ------------------------------------------------------------------
+    # Theme toggle
+    # ------------------------------------------------------------------
+
+    def _toggle_theme(self) -> None:
+        self._is_dark = not self._is_dark
+        self._palette = DARK_PALETTE if self._is_dark else LIGHT_PALETTE
+        self._theme_btn.setText("☀" if self._is_dark else "🌙")
+        self._theme_btn.setToolTip(
+            "Switch to light mode" if self._is_dark else "Switch to dark mode"
+        )
+        self._apply_theme()
+
+    def _apply_theme(self) -> None:
+        P = self._palette
+
+        self.setStyleSheet(f"background-color: {P.background};")
+        self._msg_label.setStyleSheet(self._msg_style())
+
+        for plot in (self._plot_widget, self._mf_plot):
+            plot.setBackground(P.plot_background)
+            plot.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
+            for axis_name in ("bottom", "left"):
+                axis = plot.getPlotItem().getAxis(axis_name)
+                axis.setPen(pg.mkPen(P.border))
+                axis.setTextPen(pg.mkPen(P.text_secondary))
+
+        self._mf_plot.setTitle("Matched Filter Output", color=P.text_primary, size="11pt")
+        self._mf_plot.setLabel("bottom", "Depth", units="m",
+                               **{"color": P.text_secondary, "font-size": "10pt"})
+        self._mf_plot.setLabel("left", "Correlation",
+                               units="dBFS", **{"color": P.text_secondary, "font-size": "10pt"})
+        self._mf_curve.setPen(pg.mkPen(color=P.secondary_accent, width=2))
+
+        for btn in self._model_buttons.values():
+            btn.setStyleSheet(self._toggle_style())
+
+        self._connect_btn.setStyleSheet(self._action_btn_style(P.primary_accent))
+        self._disconnect_btn.setStyleSheet(self._action_btn_style(P.panel))
+        self._start_btn.setStyleSheet(self._action_btn_style(P.secondary_accent))
+        self._pause_btn.setStyleSheet(self._action_btn_style(P.highlight))
+        self._load_ref_btn.setStyleSheet(self._load_ref_style())
+        self._theme_btn.setStyleSheet(self._theme_btn_style())
+
+        pg.setConfigOption("background", P.plot_background)
+        pg.setConfigOption("foreground", P.text_secondary)
+
+        he_logo = "hybridecho_logo.png" if self._is_dark else "HE_logo_rot_transparent.png"
+        he_h = _LOGO_H if self._is_dark else _LOGO_H_LIGHT_HE
+        px = QPixmap(str(_ASSETS / he_logo))
+        self._logo_right.setPixmap(px.scaledToHeight(he_h, Qt.TransformationMode.SmoothTransformation))
+        self._logo_right.adjustSize()
+
+        # Re-apply current status colours without triggering the status message popup
+        self._on_status_changed(self._current_conn_status, show_message=False)
+        self._on_acq_status_changed(self._current_acq_status)
+        self._on_meta_changed()
+        self._on_channels_changed()
+        self._reposition_overlays()
 
     # ------------------------------------------------------------------
     # Overlay helpers
@@ -294,7 +390,7 @@ class MainWindow(QMainWindow):
         lh = self._msg_label.height()
         self._msg_label.move(_MSG_MARGIN, h - lh - _MSG_MARGIN)
 
-    def _reposition_logos(self) -> None:
+    def _reposition_overlays(self) -> None:
         cw = self.centralWidget()
         if cw is None:
             return
@@ -302,12 +398,13 @@ class MainWindow(QMainWindow):
         m = _MSG_MARGIN
         self._logo_left.move(m, h - self._logo_left.height() - m)
         self._logo_right.move(w - self._logo_right.width() - m, h - self._logo_right.height() - m)
+        self._theme_btn.move(w - _THEME_BTN_SIZE - m, m)
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
         if self._msg_label.isVisible():
             self._reposition_msg_label()
-        self._reposition_logos()
+        self._reposition_overlays()
 
     # ------------------------------------------------------------------
     # ViewModel binding
@@ -349,25 +446,38 @@ class MainWindow(QMainWindow):
         self._mf_curve.setData(x, y)
 
     def _on_acq_status_changed(self, status: AcquisitionStatus) -> None:
-        color = _ACQ_COLOR.get(status, P.text_secondary)
-        text  = _ACQ_LABEL.get(status, "")
+        self._current_acq_status = status
+        P = self._palette
+        color = {
+            AcquisitionStatus.IDLE:    P.text_secondary,
+            AcquisitionStatus.RUNNING: P.secondary_accent,
+            AcquisitionStatus.PAUSED:  P.highlight,
+        }.get(status, P.text_secondary)
+        text = _ACQ_LABEL.get(status, "")
         self._acq_dot.setStyleSheet(f"background-color: {color}; border-radius: 5px;")
         self._acq_label.setText(text)
         self._acq_label.setStyleSheet(f"color: {color}; font-size: 11px; background: transparent;")
         self._acq_label.adjustSize()
 
-    def _on_status_changed(self, status: ConnectionStatus) -> None:
-        color = _STATUS_COLOR.get(status, P.error)
-        text  = _STATUS_MESSAGE.get(status, "")
+    def _on_status_changed(self, status: ConnectionStatus, *, show_message: bool = True) -> None:
+        self._current_conn_status = status
+        P = self._palette
+        color = {
+            ConnectionStatus.DISCONNECTED: P.error,
+            ConnectionStatus.CONNECTING:   P.highlight,
+            ConnectionStatus.CONNECTED:    P.secondary_accent,
+            ConnectionStatus.ERROR:        P.error,
+        }.get(status, P.error)
+        text = _STATUS_MESSAGE.get(status, "")
         self._status_dot.setStyleSheet(f"background-color: {color}; border-radius: 5px;")
-        self._show_message(_STATUS_MESSAGE.get(status, "Unknown status"))
         self._status_label.setText(text)
         self._status_label.setStyleSheet(f"color: {color}; font-size: 11px; background: transparent;")
         self._status_label.adjustSize()
+        if show_message:
+            self._show_message(_STATUS_MESSAGE.get(status, "Unknown status"))
 
     def _on_model_toggled(self, model: PicoscopeModel, checked: bool) -> None:
         assert self._vm is not None
-        # Uncheck the other button, then update the ViewModel
         for m, btn in self._model_buttons.items():
             if m != model:
                 btn.setChecked(False)
@@ -405,6 +515,7 @@ class MainWindow(QMainWindow):
 
     def _on_meta_changed(self) -> None:
         assert self._vm is not None
+        P = self._palette
         self._plot_widget.setTitle(self._vm.title, color=P.text_primary, size="11pt")
         x_label, x_unit = self._vm.x_label
         y_label, y_unit = self._vm.y_label
@@ -421,12 +532,6 @@ class MainWindow(QMainWindow):
         for name in list(self._curves):
             if name not in vm_names:
                 self._plot_widget.removeItem(self._curves.pop(name))
-
-        self._plot_widget.addLegend(
-            labelTextColor=P.text_primary,
-            brush=pg.mkBrush(QColor(P.panel)),
-            pen=pg.mkPen(P.border),
-        )
 
         for ch in self._vm.channels:
             if not ch.visible:

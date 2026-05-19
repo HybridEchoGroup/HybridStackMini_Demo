@@ -22,6 +22,23 @@ class ColorPalette:
     hover: str
     pressed: str
 
+LIGHT_PALETTE = ColorPalette(
+    background="#F5F7FA",
+    surface="#FFFFFF",
+    panel="#E9EEF4",
+    primary_accent="#1F6FEB",
+    secondary_accent="#00A3A3",
+    highlight="#FFB020",
+    error="#D64545",
+    text_primary="#1B1F23",
+    text_secondary="#667085",
+    plot_background="#FFFFFF",
+    plot_grid="#D8DEE6",
+    border="#D8DEE6",
+    hover="#E1E7ED",
+    pressed="#D0D7DE",
+)
+
 
 DARK_PALETTE = ColorPalette(
     background="#1E2228",
