@@ -97,6 +97,7 @@ class _PicoConnectRunnable(QRunnable):
             handle = handler_cls()
             self.signals.finished.emit(handle)
         except Exception as e:
+            print(f"Error: {e}")
             self.signals.error.emit(str(e))
 
 class Pico_data_collector(QObject):
