@@ -40,6 +40,7 @@ SAMPLE_RATE = 156.25e6          # Hz
 V_RANGE     = 10.0            # ±1000 mV
 _TIME_AXIS  = np.linspace(0, N_SAMPLES / SAMPLE_RATE, N_SAMPLES)  # seconds
 
+
 # Default colour palette (matplotlib tab10 subset)
 _PALETTE = [
     "#1f77b4",
@@ -131,13 +132,14 @@ class Pico_data_collector(QObject):
 class _DataProcessor(QObject):
     """Extracts and converts channel data off the GUI thread."""
 
-    data_ready = pyqtSignal(object, object)   # time_axis (float64), dataB (float64)
+    data_ready = pyqtSignal(object, object, object)   # time_axis, dataA, dataB (float64)
 
     def process(self, data) -> None:
         if data is None or len(data) == 0:
             return
+        dataA = data[:, 0].astype(np.float64, copy=False)
         dataB = data[:, 1].astype(np.float64, copy=False)
-        self.data_ready.emit(_TIME_AXIS, dataB)
+        self.data_ready.emit(_TIME_AXIS, dataA, dataB)
 
 
 class GraphViewModel(QObject):
@@ -186,6 +188,7 @@ class GraphViewModel(QObject):
         self._pool = QThreadPool(self)
         self._pool.setMaxThreadCount(2)
 
+        self.dataA = np.array([])
         self.dataB = np.array([])
 
     # ------------------------------------------------------------------
@@ -286,8 +289,9 @@ class GraphViewModel(QObject):
         ch.y = y if (isinstance(y, np.ndarray) and y.dtype == np.float64) else np.asarray(y, dtype=np.float64)
         self.channel_data_changed.emit(name)
     
-    def _on_data_processed(self, time_axis: np.ndarray, dataB: np.ndarray) -> None:
+    def _on_data_processed(self, time_axis: np.ndarray, dataA: np.ndarray, dataB: np.ndarray) -> None:
         """Receive already-converted arrays from _DataProcessor and update the graph."""
+        self.dataA = dataA
         self.dataB = dataB
         self.update_channel("CH B", time_axis, dataB)
         self.live_data_ready.emit()

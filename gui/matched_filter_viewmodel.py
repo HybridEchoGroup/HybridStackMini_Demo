@@ -24,6 +24,7 @@ from gui.graph_viewmodel import N_SAMPLES, SAMPLE_RATE, _TIME_AXIS
 SOUND_SPEED_WATER = 1480.0                          # m/s
 _DISTANCE_AXIS    = _TIME_AXIS * SOUND_SPEED_WATER / 2.0   # one-way depth (m)
 MF_MAX_DEPTH_M    = float(_DISTANCE_AXIS[-1])       # ~1.48 m
+_CROSSTALK_SKIP_SAMPLES = 1000                      # leading samples of CH B blanked before MF to suppress direct crosstalk
 
 
 class _FilterWorker(QRunnable):
@@ -36,7 +37,12 @@ class _FilterWorker(QRunnable):
         self._cb      = callback
 
     def run(self) -> None:
-        sig_fft = np.fft.rfft(self._data, n=N_SAMPLES)
+        data = self._data.copy()
+        data[:_CROSSTALK_SKIP_SAMPLES] = 0.0
+        rms = np.sqrt(np.mean(data ** 2))
+        if rms > 0:
+            data /= rms
+        sig_fft = np.fft.rfft(data, n=N_SAMPLES)
         output  = np.abs(np.fft.irfft(sig_fft * self._ref_fft, n=N_SAMPLES))
         peak = output.max()
         if peak > 0:
@@ -89,6 +95,9 @@ class MatchedFilterViewModel(QObject):
     def set_reference(self, array: np.ndarray) -> None:
         """Set the reference signal directly from an array."""
         self._reference = np.asarray(array, dtype=float)
+        rms = np.sqrt(np.mean(self._reference ** 2))
+        if rms > 0:
+            self._reference = self._reference / rms
         # Pre-compute and cache the conjugate FFT padded to N_SAMPLES
         self._ref_fft = np.conj(np.fft.rfft(self._reference, n=N_SAMPLES))
         self.reference_changed.emit()
