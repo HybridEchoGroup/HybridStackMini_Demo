@@ -15,9 +15,10 @@ _ASSETS = Path(__file__).parent.parent / "assets"
 _LOGO_H = 90          # logo height for dark-mode HE logo
 _LOGO_H_LIGHT_HE = 135  # compensates for the narrower aspect ratio of the light-mode HE logo
 
+import config
 from gui.graph_viewmodel import (
     AcquisitionStatus, ConnectionStatus, GraphViewModel, N_SAMPLES, PicoscopeModel,
-    SAMPLE_RATE, V_RANGE, _TIME_AXIS,
+    SAMPLE_RATE, _TIME_AXIS,
 )
 from gui.matched_filter_viewmodel import MatchedFilterViewModel
 from gui.theme import DARK_PALETTE, LIGHT_PALETTE
@@ -35,10 +36,9 @@ _ACQ_LABEL = {
     AcquisitionStatus.PAUSED:  "Paused",
 }
 
-_MSG_MARGIN   = 12   # px from window edges
-_MSG_DURATION = 3000 # ms
+_MSG_MARGIN     = 12   # px from window edges
+_MSG_DURATION   = 3000 # ms
 _THEME_BTN_SIZE = 28
-_LOOPBACK_EXTRA_SAMPLES = 500  # extra samples beyond reference length to absorb trigger jitter
 
 
 class MainWindow(QMainWindow):
@@ -140,13 +140,13 @@ class MainWindow(QMainWindow):
         self._plot_widget.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
         _duration = N_SAMPLES / SAMPLE_RATE        # 0.002 s
         self._plot_widget.setXRange(0, _duration, padding=0)
-        self._plot_widget.setYRange(-V_RANGE, V_RANGE, padding=0)
+        self._plot_widget.setYRange(-config.CH_B_DISPLAY_RANGE_MV, config.CH_B_DISPLAY_RANGE_MV, padding=0)
         self._plot_widget.setLimits(xMin=0, xMax=_duration)
         self._plot_widget.setMouseEnabled(x=True, y=False)
 
         # --- Loopback plot (CH A) ---
         self._loopback_plot = pg.PlotWidget()
-        self._loopback_plot.setTitle("Loopback (CH A)", color=P.text_primary, size="11pt")
+        self._loopback_plot.setTitle("Loopback", color=P.text_primary, size="11pt")
         self._loopback_plot.showGrid(x=True, y=True, alpha=0.4)
         self._loopback_plot.getPlotItem().getAxis("bottom").setPen(pg.mkPen(P.border))
         self._loopback_plot.getPlotItem().getAxis("left").setPen(pg.mkPen(P.border))
@@ -156,7 +156,7 @@ class MainWindow(QMainWindow):
                                      **{"color": P.text_secondary, "font-size": "10pt"})
         self._loopback_plot.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
         self._loopback_plot.setXRange(0, _duration, padding=0)
-        self._loopback_plot.setYRange(-10000, 10000, padding=0)
+        self._loopback_plot.setYRange(-config.CH_A_DISPLAY_RANGE_MV, config.CH_A_DISPLAY_RANGE_MV, padding=0)
         self._loopback_plot.setLimits(xMin=0, xMax=_duration)
         self._loopback_plot.setMouseEnabled(x=True, y=False)
         self._loopback_curve = self._loopback_plot.plot(
@@ -180,9 +180,9 @@ class MainWindow(QMainWindow):
         self._mf_plot.setLabel("left", "Correlation",
                                units="dBFS", **{"color": P.text_secondary, "font-size": "10pt"})
         self._mf_plot.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
-        self._mf_plot.setXRange(0, 0.1, padding=0)
+        self._mf_plot.setXRange(0, config.MF_MAX_DEPTH_M, padding=0)
         self._mf_plot.setYRange(-120, 0, padding=0)
-        self._mf_plot.setLimits(xMin=0, xMax=0.1, yMin=-120, yMax=0)
+        self._mf_plot.setLimits(xMin=0, xMax=config.MF_MAX_DEPTH_M, yMin=-120, yMax=0)
         self._mf_plot.setMouseEnabled(x=True, y=False)
         self._mf_curve = self._mf_plot.plot(
             [], [], pen=pg.mkPen(color=P.secondary_accent, width=2)
@@ -237,7 +237,7 @@ class MainWindow(QMainWindow):
         ctrl_row.addStretch()
         layout.addLayout(ctrl_row)
 
-        # --- Load Reference / Loopback row ---
+        # --- Load Reference / Loopback / Load Config row ---
         self._load_ref_btn = _btn("Load Reference", P.panel, self._on_load_reference_clicked)
         self._load_ref_btn.setStyleSheet(self._load_ref_style())
 
@@ -248,10 +248,14 @@ class MainWindow(QMainWindow):
         self._loopback_btn.setToolTip("Use live Channel A signal as matched filter reference")
         self._loopback_btn.clicked.connect(self._on_loopback_toggled)
 
+        self._load_config_btn = _btn("Load Config", P.panel, self._on_load_config_clicked)
+        self._load_config_btn.setStyleSheet(self._load_ref_style())
+
         ref_row = QHBoxLayout()
         ref_row.addStretch()
         ref_row.addWidget(self._load_ref_btn)
         ref_row.addWidget(self._loopback_btn)
+        ref_row.addWidget(self._load_config_btn)
         ref_row.addStretch()
         layout.addLayout(ref_row)
 
@@ -394,6 +398,7 @@ class MainWindow(QMainWindow):
         self._start_btn.setStyleSheet(self._action_btn_style(P.secondary_accent))
         self._pause_btn.setStyleSheet(self._action_btn_style(P.highlight))
         self._load_ref_btn.setStyleSheet(self._load_ref_style())
+        self._load_config_btn.setStyleSheet(self._load_ref_style())
         self._loopback_btn.setStyleSheet(self._toggle_style())
         self._theme_btn.setStyleSheet(self._theme_btn_style())
 
@@ -490,7 +495,7 @@ class MainWindow(QMainWindow):
                     crop = min(self._loaded_ref_length, len(self._vm.dataA))
                 else:
                     ref = self._mf_vm.reference
-                    crop = min(len(ref) + _LOOPBACK_EXTRA_SAMPLES, len(self._vm.dataA)) if ref is not None else len(self._vm.dataA)
+                    crop = min(len(ref) + config.LOOPBACK_EXTRA_SAMPLES, len(self._vm.dataA)) if ref is not None else len(self._vm.dataA)
                 self._mf_vm.set_reference(self._vm.dataA[:crop])
         self._mf_vm.process(self._vm.dataB)
 
@@ -574,6 +579,20 @@ class MainWindow(QMainWindow):
             ref = self._mf_vm.reference
             self._loaded_ref_length = len(ref) if ref is not None else None
             self._show_message(f"Reference loaded: {Path(path).name}")
+
+    def _on_load_config_clicked(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Config", "", "TOML files (*.toml);;All files (*)"
+        )
+        if not path:
+            return
+        config.reload(path)
+        self._mf_vm.update_from_config()
+        self._plot_widget.setYRange(-config.CH_B_DISPLAY_RANGE_MV, config.CH_B_DISPLAY_RANGE_MV, padding=0)
+        self._loopback_plot.setYRange(-config.CH_A_DISPLAY_RANGE_MV, config.CH_A_DISPLAY_RANGE_MV, padding=0)
+        self._mf_plot.setXRange(0, config.MF_MAX_DEPTH_M, padding=0)
+        self._mf_plot.setLimits(xMin=0, xMax=config.MF_MAX_DEPTH_M, yMin=-120, yMax=0)
+        self._show_message(f"Config loaded: {Path(path).name} — hardware settings apply on next Start")
 
     def _on_meta_changed(self) -> None:
         assert self._vm is not None

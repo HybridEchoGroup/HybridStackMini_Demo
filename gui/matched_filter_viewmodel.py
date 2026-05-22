@@ -19,12 +19,10 @@ from typing import Optional
 import numpy as np
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
 
+from config import SOUND_SPEED_MPS, CROSSTALK_SKIP_SAMPLES, DEFAULT_REFERENCE_FREQ_HZ
 from gui.graph_viewmodel import N_SAMPLES, SAMPLE_RATE, _TIME_AXIS
 
-SOUND_SPEED_WATER = 1480.0                          # m/s
-_DISTANCE_AXIS    = _TIME_AXIS * SOUND_SPEED_WATER / 2.0   # one-way depth (m)
-MF_MAX_DEPTH_M    = float(_DISTANCE_AXIS[-1])       # ~1.48 m
-_CROSSTALK_SKIP_SAMPLES = 1000                      # leading samples of CH B blanked before MF to suppress direct crosstalk
+_DISTANCE_AXIS = _TIME_AXIS * SOUND_SPEED_MPS / 2.0   # one-way depth (m)
 
 
 class _FilterWorker(QRunnable):
@@ -38,7 +36,7 @@ class _FilterWorker(QRunnable):
 
     def run(self) -> None:
         data = self._data.copy()
-        data[:_CROSSTALK_SKIP_SAMPLES] = 0.0
+        data[:CROSSTALK_SKIP_SAMPLES] = 0.0
         rms = np.sqrt(np.mean(data ** 2))
         if rms > 0:
             data /= rms
@@ -75,13 +73,13 @@ class MatchedFilterViewModel(QObject):
         self.load_default_reference()
 
     @staticmethod
-    def make_sine_reference(frequency: float = 7e6) -> np.ndarray:
+    def make_sine_reference(frequency: float = DEFAULT_REFERENCE_FREQ_HZ) -> np.ndarray:
         """Return a sine wave at *frequency* Hz sampled at SAMPLE_RATE over N_SAMPLES."""
         return np.sin(2 * np.pi * frequency * _TIME_AXIS)
 
     def load_default_reference(self) -> None:
         """Set the reference to a 7 MHz sine wave."""
-        self.set_reference(self.make_sine_reference(7e6))
+        self.set_reference(self.make_sine_reference(DEFAULT_REFERENCE_FREQ_HZ))
 
     # ------------------------------------------------------------------
     # Reference management
@@ -125,6 +123,13 @@ class MatchedFilterViewModel(QObject):
         ref_fft_snapshot = self._ref_fft   # capture ref under the current lock
         worker = _FilterWorker(data, ref_fft_snapshot, self._on_result)
         self._pool.start(worker)
+
+    def update_from_config(self) -> None:
+        """Reload signal-processing constants from config without changing the reference."""
+        global _DISTANCE_AXIS, CROSSTALK_SKIP_SAMPLES
+        import config
+        CROSSTALK_SKIP_SAMPLES = config.CROSSTALK_SKIP_SAMPLES
+        _DISTANCE_AXIS = _TIME_AXIS * config.SOUND_SPEED_MPS / 2.0
 
     def _on_result(self, x: np.ndarray, y: np.ndarray) -> None:
         self._busy = False

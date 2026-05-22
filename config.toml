@@ -1,0 +1,28 @@
+# HybridStackMini configuration
+[picoscope]
+model                   = "PS3406B"  # PS6424E | PS3406B
+samples                 = 312500
+timebase                = 5          # 5=156.25 MHz  6=78.125 MHz  7=39.06 MHz
+acquisition_interval_ms = 300
+
+[picoscope.channel_a]
+voltage_range = 9
+
+[picoscope.channel_b]
+voltage_range = 1
+
+[picoscope.trigger]
+channel       = 0
+threshold_mv  = 2600
+voltage_range = 9
+
+[signal_processing]
+sound_speed_mps             = 1480.0
+crosstalk_skip_samples      = 1000     # leading CH B samples blanked before matched filter
+default_reference_freq_hz   = 7000000
+loopback_extra_samples      = 500      # extra samples beyond file-ref length for loopback crop
+
+[display]
+mf_max_depth_m      = 0.1
+channel_a_range_mv  = 10000.0
+channel_b_range_mv  = 10.0

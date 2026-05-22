@@ -30,15 +30,11 @@ from typing import Optional
 import numpy as np
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, QThread, QTimer
 
+import config as _config
+from config import N_SAMPLES, SAMPLE_RATE, TIMEBASE   # baked into _TIME_AXIS at startup
 from driver.picoscope import PicoScope, create_backend
-from driver.utils import channels, voltage_level, timebase
 
-
-# Acquisition hardware constants
-N_SAMPLES   = 312_500
-SAMPLE_RATE = 156.25e6          # Hz
-V_RANGE     = 10.0            # ±1000 mV
-_TIME_AXIS  = np.linspace(0, N_SAMPLES / SAMPLE_RATE, N_SAMPLES)  # seconds
+_TIME_AXIS = np.linspace(0, N_SAMPLES / SAMPLE_RATE, N_SAMPLES)  # seconds
 
 
 # Default colour palette (matplotlib tab10 subset)
@@ -113,7 +109,7 @@ class Pico_data_collector(QObject):
     def start(self):
         self._running = True
         self._timer = QTimer()
-        self._timer.setInterval(300)  # 300ms
+        self._timer.setInterval(_config.ACQUISITION_INTERVAL_MS)
         self._timer.timeout.connect(self._collect)
         self.stop_signal.connect(self._stop)
         self._timer.start()
@@ -121,7 +117,7 @@ class Pico_data_collector(QObject):
     def _collect(self):
         if not self._running:
             return
-        self._pico_handle.start_data_collect(timebase.Freq_156_25MHz.value)
+        self._pico_handle.start_data_collect(TIMEBASE)
         data = self._pico_handle.return_data()
         self.collect.emit(data)
 
@@ -368,10 +364,9 @@ class GraphViewModel(QObject):
         self.disconnect_picoscope()
 
     def start(self) -> None:
-        self.picoscope_handle.enable_channel_A(voltage_level.V10_v)
-        self.picoscope_handle.enable_channel_B(voltage_level.V20_mv)
-        #self.picoscope_handle.autotrigger(channels.Channel_A, voltage_level.V1_v)
-        self.picoscope_handle.setup_trigger(voltage_level.V10_v, 2600, channels.Channel_A)
+        self.picoscope_handle.enable_channel_A(_config.CH_A_VOLTAGE_RANGE)
+        self.picoscope_handle.enable_channel_B(_config.CH_B_VOLTAGE_RANGE)
+        self.picoscope_handle.setup_trigger(_config.TRIGGER_VOLTAGE_RANGE, _config.TRIGGER_THRESHOLD_MV, _config.TRIGGER_CHANNEL)
 
         # Acquisition thread
         self.sr_thread = QThread()
