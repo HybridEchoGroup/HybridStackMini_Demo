@@ -369,9 +369,9 @@ class GraphViewModel(QObject):
 
     def start(self) -> None:
         self.picoscope_handle.enable_channel_A(voltage_level.V10_v)
-        self.picoscope_handle.enable_channel_B(voltage_level.V10_mv)
+        self.picoscope_handle.enable_channel_B(voltage_level.V20_mv)
         #self.picoscope_handle.autotrigger(channels.Channel_A, voltage_level.V1_v)
-        self.picoscope_handle.setup_trigger(voltage_level.V10_v, 1500, channels.Channel_A)
+        self.picoscope_handle.setup_trigger(voltage_level.V10_v, 2600, channels.Channel_A)
 
         # Acquisition thread
         self.sr_thread = QThread()
