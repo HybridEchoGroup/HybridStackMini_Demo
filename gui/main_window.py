@@ -5,10 +5,10 @@ from pathlib import Path
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import QSize, Qt, QTimer
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QDoubleValidator, QPixmap
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSizePolicy, QLabel,
-    QFileDialog,
+    QFileDialog, QLineEdit,
 )
 
 _ASSETS = Path(__file__).parent.parent / "assets"
@@ -276,11 +276,30 @@ class MainWindow(QMainWindow):
         self._load_config_btn = _btn("Load Config", P.panel, self._on_load_config_clicked)
         self._load_config_btn.setStyleSheet(self._load_ref_style())
 
+        self._sound_speed_label = QLabel("c =")
+        self._sound_speed_label.setStyleSheet(
+            f"color: {P.text_secondary}; font-size: 12px; background: transparent;"
+        )
+        self._sound_speed_edit = QLineEdit(str(int(config.SOUND_SPEED_MPS)))
+        self._sound_speed_edit.setFixedWidth(70)
+        self._sound_speed_edit.setValidator(QDoubleValidator(1.0, 100_000.0, 1))
+        self._sound_speed_edit.setToolTip("Speed of sound in m/s")
+        self._sound_speed_edit.setStyleSheet(self._lineedit_style())
+        self._sound_speed_edit.returnPressed.connect(self._on_sound_speed_entered)
+        self._sound_speed_unit = QLabel("m/s")
+        self._sound_speed_unit.setStyleSheet(
+            f"color: {P.text_secondary}; font-size: 12px; background: transparent;"
+        )
+
         ref_row = QHBoxLayout()
         ref_row.addStretch()
         ref_row.addWidget(self._load_ref_btn)
         ref_row.addWidget(self._loopback_btn)
         ref_row.addWidget(self._load_config_btn)
+        ref_row.addSpacing(20)
+        ref_row.addWidget(self._sound_speed_label)
+        ref_row.addWidget(self._sound_speed_edit)
+        ref_row.addWidget(self._sound_speed_unit)
         ref_row.addStretch()
         layout.addLayout(ref_row)
 
@@ -363,6 +382,20 @@ class MainWindow(QMainWindow):
             QPushButton:pressed {{ background-color: {P.pressed}; }}
         """
 
+    def _lineedit_style(self) -> str:
+        P = self._palette
+        return f"""
+            QLineEdit {{
+                background-color: {P.panel};
+                color: {P.text_primary};
+                border: 1px solid {P.border};
+                border-radius: 4px;
+                padding: 4px 6px;
+                font-size: 12px;
+            }}
+            QLineEdit:focus {{ border-color: {P.primary_accent}; }}
+        """
+
     def _msg_style(self) -> str:
         P = self._palette
         return f"""
@@ -433,6 +466,10 @@ class MainWindow(QMainWindow):
         self._load_config_btn.setStyleSheet(self._load_ref_style())
         self._loopback_btn.setStyleSheet(self._toggle_style())
         self._theme_btn.setStyleSheet(self._theme_btn_style())
+        self._sound_speed_edit.setStyleSheet(self._lineedit_style())
+        _lbl = f"color: {P.text_secondary}; font-size: 12px; background: transparent;"
+        self._sound_speed_label.setStyleSheet(_lbl)
+        self._sound_speed_unit.setStyleSheet(_lbl)
 
         pg.setConfigOption("background", P.plot_background)
         pg.setConfigOption("foreground", P.text_secondary)
@@ -611,6 +648,14 @@ class MainWindow(QMainWindow):
             self._mf_vm.load_default_reference()
             self._show_message("Loopback off: using ideal reference")
 
+    def _on_sound_speed_entered(self) -> None:
+        try:
+            mps = float(self._sound_speed_edit.text())
+        except ValueError:
+            return
+        self._mf_vm.set_sound_speed(mps)
+        self._show_message(f"Speed of sound set to {mps:.0f} m/s")
+
     def _on_load_reference_clicked(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Load Reference Signal", "", "Binary files (*.bin);;All files (*)"
@@ -629,6 +674,7 @@ class MainWindow(QMainWindow):
             return
         config.reload(path)
         self._mf_vm.update_from_config()
+        self._sound_speed_edit.setText(str(int(config.SOUND_SPEED_MPS)))
         self._plot_widget.setYRange(-config.CH_B_DISPLAY_RANGE_MV, config.CH_B_DISPLAY_RANGE_MV, padding=0)
         self._loopback_plot.setYRange(-config.CH_A_DISPLAY_RANGE_MV, config.CH_A_DISPLAY_RANGE_MV, padding=0)
         self._mf_plot.setXRange(0, config.MF_MAX_DEPTH_M, padding=0)

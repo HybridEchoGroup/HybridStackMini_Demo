@@ -22,17 +22,16 @@ from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
 from config import SOUND_SPEED_MPS, CROSSTALK_SKIP_SAMPLES, DEFAULT_REFERENCE_FREQ_HZ
 from gui.graph_viewmodel import N_SAMPLES, SAMPLE_RATE, _TIME_AXIS
 
-_DISTANCE_AXIS = _TIME_AXIS * SOUND_SPEED_MPS / 2.0   # one-way depth (m)
-
 
 class _FilterWorker(QRunnable):
     """Runs one matched-filter pass off the GUI thread."""
 
-    def __init__(self, data: np.ndarray, ref_fft: np.ndarray, callback) -> None:
+    def __init__(self, data: np.ndarray, ref_fft: np.ndarray, dist_axis: np.ndarray, callback) -> None:
         super().__init__()
-        self._data    = data
-        self._ref_fft = ref_fft
-        self._cb      = callback
+        self._data      = data
+        self._ref_fft   = ref_fft
+        self._dist_axis = dist_axis
+        self._cb        = callback
 
     def run(self) -> None:
         data = self._data.copy()
@@ -46,7 +45,7 @@ class _FilterWorker(QRunnable):
         if peak > 0:
             output = output / peak
         output = 20.0 * np.log10(np.maximum(output, 1e-6))  # floor at -120 dB
-        self._cb(_DISTANCE_AXIS, output)
+        self._cb(self._dist_axis, output)
 
 
 class MatchedFilterViewModel(QObject):
@@ -68,9 +67,11 @@ class MatchedFilterViewModel(QObject):
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._reference: np.ndarray | None = None
-        self._ref_fft:   np.ndarray | None = None   # cached FFT of reference
-        self._busy       = False
-        self._pool       = QThreadPool.globalInstance()
+        self._ref_fft:   np.ndarray | None = None   # cached conjugate FFT of reference
+        self._acf_db:    np.ndarray | None = None   # cached autocorrelation magnitude (dB)
+        self._sound_speed = SOUND_SPEED_MPS
+        self._busy        = False
+        self._pool        = QThreadPool.globalInstance()
         self.load_default_reference()
 
     @staticmethod
@@ -101,14 +102,14 @@ class MatchedFilterViewModel(QObject):
         ref_fft = np.fft.rfft(self._reference, n=N_SAMPLES)
         self._ref_fft = np.conj(ref_fft)
 
-        # Autocorrelation → zero-Doppler cut of the ambiguity function
+        # Cache autocorrelation magnitude — axis recomputed separately so
+        # set_sound_speed() can re-emit without re-processing the reference.
         acf = np.abs(np.fft.irfft(ref_fft * np.conj(ref_fft), n=N_SAMPLES))
         acf = np.fft.fftshift(acf)
         if acf.max() > 0:
             acf /= acf.max()
-        acf_db = 20.0 * np.log10(np.maximum(acf, 1e-6))
-        lag_axis = (np.arange(N_SAMPLES) - N_SAMPLES // 2) / SAMPLE_RATE * SOUND_SPEED_MPS / 2.0
-        self.ambiguity_ready.emit(lag_axis, acf_db)
+        self._acf_db = 20.0 * np.log10(np.maximum(acf, 1e-6))
+        self._emit_ambiguity()
 
         self.reference_changed.emit()
 
@@ -119,6 +120,17 @@ class MatchedFilterViewModel(QObject):
     # ------------------------------------------------------------------
     # Processing
     # ------------------------------------------------------------------
+
+    def set_sound_speed(self, mps: float) -> None:
+        """Update the speed of sound used for the depth axis."""
+        self._sound_speed = mps
+        self._emit_ambiguity()
+
+    def _emit_ambiguity(self) -> None:
+        if self._acf_db is None:
+            return
+        lag_axis = (np.arange(N_SAMPLES) - N_SAMPLES // 2) / SAMPLE_RATE * self._sound_speed / 2.0
+        self.ambiguity_ready.emit(lag_axis, self._acf_db)
 
     def process(self, data: np.ndarray) -> None:
         """Submit a matched-filter job to the thread pool.
@@ -131,17 +143,19 @@ class MatchedFilterViewModel(QObject):
         if self._busy:
             return
 
-        self._busy  = True
-        ref_fft_snapshot = self._ref_fft   # capture ref under the current lock
-        worker = _FilterWorker(data, ref_fft_snapshot, self._on_result)
+        self._busy = True
+        ref_fft_snapshot = self._ref_fft
+        dist_snapshot    = _TIME_AXIS * self._sound_speed / 2.0
+        worker = _FilterWorker(data, ref_fft_snapshot, dist_snapshot, self._on_result)
         self._pool.start(worker)
 
     def update_from_config(self) -> None:
         """Reload signal-processing constants from config without changing the reference."""
-        global _DISTANCE_AXIS, CROSSTALK_SKIP_SAMPLES
+        global CROSSTALK_SKIP_SAMPLES
         import config
         CROSSTALK_SKIP_SAMPLES = config.CROSSTALK_SKIP_SAMPLES
-        _DISTANCE_AXIS = _TIME_AXIS * config.SOUND_SPEED_MPS / 2.0
+        self._sound_speed = config.SOUND_SPEED_MPS
+        self._emit_ambiguity()
 
     def _on_result(self, x: np.ndarray, y: np.ndarray) -> None:
         self._busy = False
