@@ -67,6 +67,7 @@ class pico_handler(PicoScope):
 
 
     def enable_channel_A(self, range):
+        range = max(2,range) 
         self.rangeA = range
         self.status["setChA"] = ps.ps3000aSetChannel(self.chandle,
                                                 ps.PS3000A_CHANNEL['PS3000A_CHANNEL_A'],
@@ -86,6 +87,7 @@ class pico_handler(PicoScope):
         self.activeA = 1
 
     def enable_channel_B(self, range):
+        range = max(2,range) 
         self.rangeB = range
         self.status["setChB"] = ps.ps3000aSetChannel(self.chandle,
                                                 ps.PS3000A_CHANNEL['PS3000A_CHANNEL_B'],
@@ -105,6 +107,7 @@ class pico_handler(PicoScope):
         self.activeB = 1
 
     def enable_channel_C(self, range):
+        range = max(2,range) 
         self.rangeC = range
         self.status["setChC"] = ps.ps3000aSetChannel(self.chandle,
                                                 ps.PS3000A_CHANNEL['PS3000A_CHANNEL_C'],
@@ -124,6 +127,7 @@ class pico_handler(PicoScope):
         self.activeC = 1
 
     def enable_channel_D(self, range):
+        range = max(2,range) 
         self.rangeD = range
         self.status["setChD"] = ps.ps3000aSetChannel(self.chandle,
                                                 ps.PS3000A_CHANNEL['PS3000A_CHANNEL_D'],
@@ -179,7 +183,7 @@ class pico_handler(PicoScope):
                                                         10000)
         assert_pico_ok(self.status["setTrigger"])
 
-    def start_data_collect(self, timebase=5):
+    def start_data_collect(self, timebase=3):
         c_timeIndisposedMs = ctypes.c_double(0)
         c_timebase = ctypes.c_uint32(timebase)
 
@@ -208,6 +212,14 @@ class pico_handler(PicoScope):
             data[:, 3] = adc2mV(self.bufferCompleteC, self.rangeD, self.maxADC)
 
         return data
+    
+    def pause_pico(self):
+        """
+        Pauses the picoscope recording. Allows to restart recording
+        without initializing the picoscope from the ground.
+        """
+        self.status["stop"] = ps.ps3000aStop(self.chandle)
+        assert_pico_ok(self.status["stop"])
     
     def stop_pico(self):
         self.status["stop"] = ps.ps3000aStop(self.chandle)

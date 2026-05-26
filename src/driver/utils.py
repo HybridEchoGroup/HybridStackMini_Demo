@@ -81,3 +81,11 @@ class timebase(IntEnum):
     Freq_156_25MHz = 5
     Freq_78_125MHz = 6
     Freq_39_0625MHz = 7
+
+class timebase_3000(IntEnum):
+    Freq_250MHz = 2
+    Freq_125MHz = 3
+    Freq_62_5MHz = 4
+    Freq_41_66MHz = 5
+    Freq_31_25MHz = 6
+    Freq_25MHz = 7
