@@ -11,11 +11,14 @@ from PyQt6.QtWidgets import (
     QFileDialog, QFrame, QGridLayout, QLineEdit,
 )
 
-_ASSETS = Path(__file__).parent.parent / "assets"
+import logging
+_log = logging.getLogger(__name__)
+
+_ASSETS = Path(__file__).parent.parent.parent / "assets"
 _LOGO_H = 90          # logo height for dark-mode HE logo
 _LOGO_H_LIGHT_HE = 135  # compensates for the narrower aspect ratio of the light-mode HE logo
 
-import config
+import config as config
 from gui.acquisition_vm import (
     AcquisitionStatus, AcquisitionViewModel, ConnectionStatus, PicoscopeModel,
 )

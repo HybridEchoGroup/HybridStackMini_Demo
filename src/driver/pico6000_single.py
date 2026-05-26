@@ -32,7 +32,7 @@ class pico_handler(PicoScope):
             Number of samples per acquisition (default: 312500).
         """
 
-        self.status = StatusLog("logs/my_run.log")
+        self.status = StatusLog()
         self.chandle = ctypes.c_int16()
         self.enabled = 1
         self.analogue_offset = 0.0

@@ -22,6 +22,9 @@ from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
 from config import SOUND_SPEED_MPS, CROSSTALK_SKIP_SAMPLES, DEFAULT_REFERENCE_FREQ_HZ
 from gui.graph_viewmodel import N_SAMPLES, SAMPLE_RATE, _TIME_AXIS
 
+import logging
+_log = logging.getLogger(__name__)
+
 
 class _FilterWorker(QRunnable):
     """Runs one matched-filter pass off the GUI thread."""
@@ -152,7 +155,7 @@ class MatchedFilterViewModel(QObject):
     def update_from_config(self) -> None:
         """Reload signal-processing constants from config without changing the reference."""
         global CROSSTALK_SKIP_SAMPLES
-        import config
+        import config as config
         CROSSTALK_SKIP_SAMPLES = config.CROSSTALK_SKIP_SAMPLES
         self._sound_speed = config.SOUND_SPEED_MPS
         self._emit_ambiguity()

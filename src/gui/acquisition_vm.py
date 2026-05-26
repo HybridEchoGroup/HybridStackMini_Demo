@@ -10,7 +10,12 @@ from PyQt6.QtCore import QObject, QRunnable, QThread, QThreadPool, QTimer, pyqtS
 
 import config as _config
 from config import TIMEBASE
+import logging
+
 from driver.picoscope import PicoScope, create_backend
+
+import logging
+_log = logging.getLogger(__name__)
 
 
 class PicoscopeModel(Enum):
@@ -50,7 +55,7 @@ class _PicoConnectRunnable(QRunnable):
             handler_cls = create_backend(self._model)
             self.signals.finished.emit(handler_cls())
         except Exception as e:
-            print(f"Connection error: {e}")
+            _log.error("PicoScope connection failed: %s", e)
             self.signals.error.emit(str(e))
 
 
@@ -180,6 +185,7 @@ class AcquisitionViewModel(QObject):
         self._sr_thread.start()
 
         self._acquisition_status = AcquisitionStatus.RUNNING
+        _log.info("Picoscope acquisition started")
         self.acquisition_status_changed.emit(self._acquisition_status)
 
     def pause(self) -> None:
@@ -193,6 +199,7 @@ class AcquisitionViewModel(QObject):
         self.acquisition_status_changed.emit(self._acquisition_status)
         if self.picoscope_handle:
             self.picoscope_handle.pause_pico()
+            _log.info("Picoscope acquisition paused")
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -203,6 +210,7 @@ class AcquisitionViewModel(QObject):
             self.picoscope_handle.stop_pico()
         self.picoscope_handle = None
         self._picoscope_status = ConnectionStatus.DISCONNECTED
+        _log.info("Disconnected Picoscope")
         self.picoscope_status_changed.emit(self._picoscope_status)
 
     def _on_data_processed(self, dataA: np.ndarray, dataB: np.ndarray) -> None:
@@ -213,10 +221,12 @@ class AcquisitionViewModel(QObject):
     def _on_pico_connected(self, handle: PicoScope) -> None:
         self.picoscope_handle = handle
         self._picoscope_status = ConnectionStatus.CONNECTED
+        _log.info("Connected Picoscope")
         self.picoscope_status_changed.emit(self._picoscope_status)
 
     def _on_pico_failed(self, _msg: str) -> None:
         self._picoscope_status = ConnectionStatus.ERROR
+        _log.warning("Picoscope not connected")
         self.picoscope_status_changed.emit(self._picoscope_status)
 
     def _submit(self, key: str, runnable: QRunnable) -> bool:

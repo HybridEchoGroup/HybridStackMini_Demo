@@ -3,26 +3,20 @@ import logging
 
 
 class StatusLog(dict):
-    """
-    A dict that writes every status update to a log file.
+    """A dict that logs every status update through the central 'driver' logger.
 
-    Usage: replace  self.status = {}  with  self.status = StatusLog("pico.log")
+    Usage: replace  self.status = {}  with  self.status = StatusLog()
     All existing  self.status["key"] = value  lines work unchanged.
+    Output is handled by the root logger configured in log.setup().
     """
 
-    def __init__(self, filepath="pico_status.log"):
+    def __init__(self) -> None:
         super().__init__()
-        self._logger = logging.getLogger(filepath)
-        if not self._logger.handlers:
-            handler = logging.FileHandler(filepath)
-            handler.setFormatter(logging.Formatter("%(asctime)s  %(message)s",
-                                                   datefmt="%Y-%m-%d %H:%M:%S"))
-            self._logger.addHandler(handler)
-            self._logger.setLevel(logging.DEBUG)
+        self._logger = logging.getLogger("driver")
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         super().__setitem__(key, value)
-        self._logger.debug(f"{key} = {value}")
+        self._logger.debug("%s = %s", key, value)
 
 class channels(IntEnum):
     """

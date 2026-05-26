@@ -10,6 +10,9 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from config import N_SAMPLES, SAMPLE_RATE, TIMEBASE   # baked into _TIME_AXIS at startup
 
+import logging
+_log = logging.getLogger(__name__)
+
 _TIME_AXIS = np.linspace(0, N_SAMPLES / SAMPLE_RATE, N_SAMPLES)  # seconds
 
 # Default colour palette (matplotlib tab10 subset)

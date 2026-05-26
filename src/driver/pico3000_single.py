@@ -14,7 +14,7 @@ DISABLED = 0
 class pico_handler(PicoScope):
     def __init__(self, samples=312500):
 
-        self.status = StatusLog("logs/my_run.log")
+        self.status = StatusLog()
         self.chandle = ctypes.c_int16()
         self.enabled = 1
         self.analogue_offset = 0.0

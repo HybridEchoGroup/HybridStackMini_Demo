@@ -4,14 +4,19 @@ Run this file with uv run main.py
 from the main directory to start the program.
 """
 
+import logging
 import sys
 
 from PyQt6.QtWidgets import QApplication
 
+import log as log
 from gui.main_window import MainWindow
 
 
 def main() -> None:
+    log.setup(level=logging.DEBUG, log_file="../logs/pico.log")
+    _log = logging.getLogger(__name__)
+    _log.info("Application started")
     app = QApplication(sys.argv)
     app.setApplicationName("HybridStackMini Demo")
     app.setOrganizationName("HybridEcho")
