@@ -12,6 +12,7 @@ All other loggers are tagged with their standard level: [INFO], [WARNING], etc.
 
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 
@@ -47,7 +48,11 @@ def setup(level: int = logging.DEBUG, log_file: str | None = "app.log") -> None:
     handlers: list[logging.Handler] = [console]
 
     if log_file:
-        fh = logging.FileHandler(log_file, encoding="utf-8")
+        p = Path(log_file)
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        stamped = p.with_stem(f"{p.stem}_{ts}")
+        stamped.parent.mkdir(parents=True, exist_ok=True)
+        fh = logging.FileHandler(stamped, encoding="utf-8")
         fh.setFormatter(fmt)
         handlers.append(fh)                # file gets everything
 
