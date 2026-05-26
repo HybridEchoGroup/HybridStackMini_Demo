@@ -643,6 +643,7 @@ class MainWindow(QMainWindow):
             btn.setChecked(m == model)
         if model is not None:
             self._show_message(f"Model {model.name} selected")
+            _log.info(f"Model {model.name} selected")
 
     def _on_connect_clicked(self) -> None:
         self._acq_vm.connect(self._acq_vm.selected_model)
