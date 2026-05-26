@@ -63,6 +63,7 @@ class MatchedFilterViewModel(QObject):
 
     result_ready      = pyqtSignal(object, object)  # x array, y array
     reference_changed = pyqtSignal()
+    ambiguity_ready   = pyqtSignal(object, object)  # lag axis (m), autocorr dB
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -97,7 +98,18 @@ class MatchedFilterViewModel(QObject):
         if rms > 0:
             self._reference = self._reference / rms
         # Pre-compute and cache the conjugate FFT padded to N_SAMPLES
-        self._ref_fft = np.conj(np.fft.rfft(self._reference, n=N_SAMPLES))
+        ref_fft = np.fft.rfft(self._reference, n=N_SAMPLES)
+        self._ref_fft = np.conj(ref_fft)
+
+        # Autocorrelation → zero-Doppler cut of the ambiguity function
+        acf = np.abs(np.fft.irfft(ref_fft * np.conj(ref_fft), n=N_SAMPLES))
+        acf = np.fft.fftshift(acf)
+        if acf.max() > 0:
+            acf /= acf.max()
+        acf_db = 20.0 * np.log10(np.maximum(acf, 1e-6))
+        lag_axis = (np.arange(N_SAMPLES) - N_SAMPLES // 2) / SAMPLE_RATE * SOUND_SPEED_MPS / 2.0
+        self.ambiguity_ready.emit(lag_axis, acf_db)
+
         self.reference_changed.emit()
 
     @property

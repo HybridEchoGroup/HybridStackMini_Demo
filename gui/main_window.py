@@ -187,11 +187,36 @@ class MainWindow(QMainWindow):
         self._mf_curve = self._mf_plot.plot(
             [], [], pen=pg.mkPen(color=P.secondary_accent, width=2)
         )
-        layout.addWidget(self._mf_plot)
+
+        # --- Ambiguity function plot (autocorrelation of reference) ---
+        self._af_plot = pg.PlotWidget()
+        self._af_plot.setTitle("Ambiguity Function", color=P.text_primary, size="11pt")
+        self._af_plot.showGrid(x=True, y=True, alpha=0.4)
+        self._af_plot.getPlotItem().getAxis("bottom").setPen(pg.mkPen(P.border))
+        self._af_plot.getPlotItem().getAxis("left").setPen(pg.mkPen(P.border))
+        self._af_plot.setLabel("bottom", "Lag", units="m",
+                               **{"color": P.text_secondary, "font-size": "10pt"})
+        self._af_plot.setLabel("left", "Autocorrelation",
+                               units="dB", **{"color": P.text_secondary, "font-size": "10pt"})
+        self._af_plot.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
+        self._af_plot.setXRange(-config.MF_MAX_DEPTH_M, config.MF_MAX_DEPTH_M, padding=0)
+        self._af_plot.setYRange(-60, 0, padding=0)
+        self._af_plot.setLimits(xMin=-config.MF_MAX_DEPTH_M, xMax=config.MF_MAX_DEPTH_M, yMin=-60, yMax=0)
+        self._af_plot.setMouseEnabled(x=True, y=False)
+        self._af_curve = self._af_plot.plot(
+            [], [], pen=pg.mkPen(color=P.highlight, width=2)
+        )
+
+        lower_row = QHBoxLayout()
+        lower_row.setSpacing(12)
+        lower_row.addWidget(self._mf_plot)
+        lower_row.addWidget(self._af_plot)
+        layout.addLayout(lower_row)
 
         # Matched filter ViewModel — call load_reference() to arm it
         self._mf_vm = MatchedFilterViewModel(self)
         self._mf_vm.result_ready.connect(self._on_mf_result)
+        self._mf_vm.ambiguity_ready.connect(self._on_af_result)
 
         # --- Model toggle buttons ---
         self._model_buttons: dict[PicoscopeModel, QPushButton] = {}
@@ -368,7 +393,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(f"background-color: {P.background};")
         self._msg_label.setStyleSheet(self._msg_style())
 
-        for plot in (self._plot_widget, self._mf_plot, self._loopback_plot):
+        for plot in (self._plot_widget, self._mf_plot, self._loopback_plot, self._af_plot):
             plot.setBackground(P.plot_background)
             plot.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
             for axis_name in ("bottom", "left"):
@@ -382,6 +407,13 @@ class MainWindow(QMainWindow):
         self._mf_plot.setLabel("left", "Correlation",
                                units="dBFS", **{"color": P.text_secondary, "font-size": "10pt"})
         self._mf_curve.setPen(pg.mkPen(color=P.secondary_accent, width=2))
+
+        self._af_plot.setTitle("Ambiguity Function", color=P.text_primary, size="11pt")
+        self._af_plot.setLabel("bottom", "Lag", units="m",
+                               **{"color": P.text_secondary, "font-size": "10pt"})
+        self._af_plot.setLabel("left", "Autocorrelation",
+                               units="dB", **{"color": P.text_secondary, "font-size": "10pt"})
+        self._af_curve.setPen(pg.mkPen(color=P.highlight, width=2))
 
         self._loopback_plot.setTitle("Loopback (CH A)", color=P.text_primary, size="11pt")
         self._loopback_plot.setLabel("bottom", "Time", units="s",
@@ -508,6 +540,9 @@ class MainWindow(QMainWindow):
     def _on_mf_result(self, x: np.ndarray, y: np.ndarray) -> None:
         self._mf_curve.setData(x / 2, y)
 
+    def _on_af_result(self, x: np.ndarray, y: np.ndarray) -> None:
+        self._af_curve.setData(x, y)
+
     def _on_acq_status_changed(self, status: AcquisitionStatus) -> None:
         self._current_acq_status = status
         P = self._palette
@@ -598,6 +633,8 @@ class MainWindow(QMainWindow):
         self._loopback_plot.setYRange(-config.CH_A_DISPLAY_RANGE_MV, config.CH_A_DISPLAY_RANGE_MV, padding=0)
         self._mf_plot.setXRange(0, config.MF_MAX_DEPTH_M, padding=0)
         self._mf_plot.setLimits(xMin=0, xMax=config.MF_MAX_DEPTH_M, yMin=-60, yMax=0)
+        self._af_plot.setXRange(-config.MF_MAX_DEPTH_M, config.MF_MAX_DEPTH_M, padding=0)
+        self._af_plot.setLimits(xMin=-config.MF_MAX_DEPTH_M, xMax=config.MF_MAX_DEPTH_M, yMin=-60, yMax=0)
         self._show_message(f"Config loaded: {Path(path).name} — hardware settings apply on next Start")
 
     def _on_meta_changed(self) -> None:
