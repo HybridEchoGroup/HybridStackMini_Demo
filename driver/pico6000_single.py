@@ -363,19 +363,19 @@ class pico_handler(PicoScope):
         c_timeIndisposedMs = ctypes.c_double(0)
         c_timebase = ctypes.c_uint32(timebase)
 
-        self.status["runBlock"] = ps.ps6000aRunBlock(self.chandle, 0, self.samples, c_timebase, ctypes.byref(c_timeIndisposedMs), 0, None, None)
+        ps.ps6000aRunBlock(self.chandle, 0, self.samples, c_timebase, ctypes.byref(c_timeIndisposedMs), 0, None, None)
         self.time = c_timeIndisposedMs
 
         ready = ctypes.c_int16(0)
         check = ctypes.c_int16(0)
         while ready.value == check.value:
-            self.status["isReady"] = ps.ps6000aIsReady(self.chandle, ctypes.byref(ready))
+            ps.ps6000aIsReady(self.chandle, ctypes.byref(ready))
 
         overflow = ctypes.c_int16(0)
         nSamples = self.samples
         noOfSamples = ctypes.c_uint64(nSamples)
-        self.status["getValues"] = ps.ps6000aGetValues(self.chandle, 0, ctypes.byref(noOfSamples), 1, enums.PICO_RATIO_MODE["PICO_RATIO_MODE_RAW"], 0, ctypes.byref(overflow))
-        assert_pico_ok(self.status["getValues"])
+        status_getValues = ps.ps6000aGetValues(self.chandle, 0, ctypes.byref(noOfSamples), 1, enums.PICO_RATIO_MODE["PICO_RATIO_MODE_RAW"], 0, ctypes.byref(overflow))
+        assert_pico_ok(status_getValues)
 
 
     def return_data(self):

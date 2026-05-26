@@ -16,10 +16,10 @@ _LOGO_H = 90          # logo height for dark-mode HE logo
 _LOGO_H_LIGHT_HE = 135  # compensates for the narrower aspect ratio of the light-mode HE logo
 
 import config
-from gui.graph_viewmodel import (
-    AcquisitionStatus, ConnectionStatus, GraphViewModel, N_SAMPLES, PicoscopeModel,
-    SAMPLE_RATE, _TIME_AXIS,
+from gui.acquisition_vm import (
+    AcquisitionStatus, AcquisitionViewModel, ConnectionStatus, PicoscopeModel,
 )
+from gui.graph_viewmodel import GraphViewModel, N_SAMPLES, SAMPLE_RATE, _TIME_AXIS
 from gui.matched_filter_viewmodel import MatchedFilterViewModel
 from gui.theme import DARK_PALETTE, LIGHT_PALETTE
 
@@ -47,7 +47,7 @@ class MainWindow(QMainWindow):
         and threads
     """
 
-    def __init__(self, viewmodel: GraphViewModel | None = None) -> None:
+    def __init__(self, graph_vm: GraphViewModel | None = None) -> None:
         super().__init__()
 
         self._palette = DARK_PALETTE
@@ -299,11 +299,19 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self._ctrl_panel, alignment=Qt.AlignmentFlag.AlignHCenter)
 
-        # name → PlotDataItem, kept in sync with the ViewModel's channels
+        # name → PlotDataItem, kept in sync with the GraphViewModel's channels
         self._curves: dict[str, pg.PlotDataItem] = {}
 
+        # Acquisition VM — hardware, threads, raw data
+        self._acq_vm = AcquisitionViewModel(self)
+        self._acq_vm.picoscope_status_changed.connect(self._on_status_changed)
+        self._acq_vm.acquisition_status_changed.connect(self._on_acq_status_changed)
+        self._acq_vm.model_changed.connect(self._on_model_changed)
+        self._acq_vm.live_data_ready.connect(self._on_live_data_ready)
+
+        # Graph VM — channel state for the waveform plot
         self._vm: GraphViewModel | None = None
-        self.set_viewmodel(viewmodel or GraphViewModel())
+        self.set_viewmodel(graph_vm or GraphViewModel())
 
         QTimer.singleShot(0, self._reposition_overlays)
 
@@ -548,45 +556,37 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def set_viewmodel(self, vm: GraphViewModel) -> None:
-        """Detach from the old ViewModel and attach to a new one."""
+        """Swap the graph ViewModel (channel state only)."""
         if self._vm is not None:
             self._vm.channels_changed.disconnect(self._on_channels_changed)
             self._vm.channel_data_changed.disconnect(self._on_channel_data_changed)
             self._vm.meta_changed.disconnect(self._on_meta_changed)
-            self._vm.model_changed.disconnect(self._on_model_changed)
-            self._vm.picoscope_status_changed.disconnect(self._on_status_changed)
-            self._vm.acquisition_status_changed.disconnect(self._on_acq_status_changed)
-            self._vm.live_data_ready.disconnect(self._on_live_data_ready)
 
         self._vm = vm
         vm.channels_changed.connect(self._on_channels_changed)
         vm.channel_data_changed.connect(self._on_channel_data_changed)
         vm.meta_changed.connect(self._on_meta_changed)
-        vm.model_changed.connect(self._on_model_changed)
-        vm.picoscope_status_changed.connect(self._on_status_changed)
-        vm.acquisition_status_changed.connect(self._on_acq_status_changed)
-        vm.live_data_ready.connect(self._on_live_data_ready)
 
         self._on_meta_changed()
         self._on_channels_changed()
-        self._on_model_changed(vm.selected_model)
 
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
 
     def _on_live_data_ready(self) -> None:
-        assert self._vm is not None
-        if len(self._vm.dataA) > 0:
-            self._loopback_curve.setData(_TIME_AXIS, self._vm.dataA)
+        dataA, dataB = self._acq_vm.dataA, self._acq_vm.dataB
+        if len(dataA) > 0:
+            self._loopback_curve.setData(_TIME_AXIS, dataA)
             if self._use_loopback:
                 if self._loaded_ref_length is not None:
-                    crop = min(self._loaded_ref_length, len(self._vm.dataA))
+                    crop = min(self._loaded_ref_length, len(dataA))
                 else:
-                    ref = self._mf_vm.reference
-                    crop = min(len(ref) + config.LOOPBACK_EXTRA_SAMPLES, len(self._vm.dataA)) if ref is not None else len(self._vm.dataA)
-                self._mf_vm.set_reference(self._vm.dataA[:crop])
-        self._mf_vm.process(self._vm.dataB)
+                    ref  = self._mf_vm.reference
+                    crop = min(len(ref) + config.LOOPBACK_EXTRA_SAMPLES, len(dataA)) if ref is not None else len(dataA)
+                self._mf_vm.set_reference(dataA[:crop])
+        self._vm.update_channel("CH B", _TIME_AXIS, dataB)
+        self._mf_vm.process(dataB)
 
     def _on_mf_result(self, x: np.ndarray, y: np.ndarray) -> None:
         self._mf_curve.setData(x / 2, y)
@@ -626,11 +626,10 @@ class MainWindow(QMainWindow):
             self._show_message(_STATUS_MESSAGE.get(status, "Unknown status"))
 
     def _on_model_toggled(self, model: PicoscopeModel, checked: bool) -> None:
-        assert self._vm is not None
         for m, btn in self._model_buttons.items():
             if m != model:
                 btn.setChecked(False)
-        self._vm.set_model(model if checked else None)
+        self._acq_vm.set_model(model if checked else None)
 
     def _on_model_changed(self, model: PicoscopeModel | None) -> None:
         for m, btn in self._model_buttons.items():
@@ -639,20 +638,16 @@ class MainWindow(QMainWindow):
             self._show_message(f"Model {model.name} selected")
 
     def _on_connect_clicked(self) -> None:
-        assert self._vm is not None
-        self._vm.connect(self._vm.selected_model)
+        self._acq_vm.connect(self._acq_vm.selected_model)
 
     def _on_disconnect_clicked(self) -> None:
-        assert self._vm is not None
-        self._vm.disconnect()
+        self._acq_vm.disconnect()
 
     def _on_start_clicked(self) -> None:
-        assert self._vm is not None
-        self._vm.start()
+        self._acq_vm.start()
 
     def _on_stop_clicked(self) -> None:
-        assert self._vm is not None
-        self._vm.pause()
+        self._acq_vm.pause()
 
     def _on_loopback_toggled(self, checked: bool) -> None:
         self._use_loopback = checked
