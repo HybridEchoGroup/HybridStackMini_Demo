@@ -8,7 +8,7 @@ from PyQt6.QtCore import QSize, Qt, QTimer
 from PyQt6.QtGui import QDoubleValidator, QPixmap
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSizePolicy, QLabel,
-    QFileDialog, QLineEdit,
+    QFileDialog, QFrame, QGridLayout, QLineEdit,
 )
 
 _ASSETS = Path(__file__).parent.parent / "assets"
@@ -58,7 +58,7 @@ class MainWindow(QMainWindow):
         self._loaded_ref_length: int | None = None
 
         self.setWindowTitle("HybridStackMini Demo")
-        self.resize(900, 500)
+        self.resize(1250, 550)
 
         P = self._palette
         self.setStyleSheet(f"background-color: {P.background};")
@@ -113,17 +113,17 @@ class MainWindow(QMainWindow):
         self._msg_timer.setSingleShot(True)
         self._msg_timer.timeout.connect(self._msg_label.hide)
 
-        def _logo_label(filename: str) -> QLabel:
+        self._px_left  = QPixmap(str(_ASSETS / "ekfz_logo_white.png"))
+        self._px_right = QPixmap(str(_ASSETS / "hybridecho_logo.png"))
+
+        def _logo_label() -> QLabel:
             lbl = QLabel(central)
             lbl.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-            px = QPixmap(str(_ASSETS / filename))
-            lbl.setPixmap(px.scaledToHeight(_LOGO_H, Qt.TransformationMode.SmoothTransformation))
-            lbl.adjustSize()
             lbl.raise_()
             return lbl
 
-        self._logo_left  = _logo_label("ekfz_logo_white.png")
-        self._logo_right = _logo_label("hybridecho_logo.png")
+        self._logo_left  = _logo_label()
+        self._logo_right = _logo_label()
 
         layout = QVBoxLayout(central)
         layout.setContentsMargins(120, 32, 120, 32)
@@ -218,90 +218,86 @@ class MainWindow(QMainWindow):
         self._mf_vm.result_ready.connect(self._on_mf_result)
         self._mf_vm.ambiguity_ready.connect(self._on_af_result)
 
-        # --- Model toggle buttons ---
-        self._model_buttons: dict[PicoscopeModel, QPushButton] = {}
-        toggle_row = QHBoxLayout()
-        toggle_row.addStretch()
-        for model in PicoscopeModel:
-            btn = QPushButton(model.name)
-            btn.setCheckable(True)
-            btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            btn.setStyleSheet(self._toggle_style())
-            btn.clicked.connect(lambda checked, m=model: self._on_model_toggled(m, checked))
-            self._model_buttons[model] = btn
-            toggle_row.addWidget(btn)
-        toggle_row.addStretch()
-        layout.addLayout(toggle_row)
+        # --- Control panel: 2-row × 5-column grid inside a bordered frame ---
+        # Row 0: PS6424E | Connect | Start | Load Reference | Loopback
+        # Row 1: PS3406B | Disconnect | Stop  | Load Config   | Speed of sound
 
-        def _btn(label: str, color: str, slot) -> QPushButton:
+        def _ctrl_btn(label: str, slot=None, checkable: bool = False) -> QPushButton:
             b = QPushButton(label)
-            b.clicked.connect(slot)
+            b.setCheckable(checkable)
             b.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            b.setStyleSheet(self._action_btn_style(color))
+            if slot:
+                b.clicked.connect(slot)
             return b
 
-        # --- Connect / Disconnect row ---
-        self._connect_btn    = _btn("Connect",    P.primary_accent,    self._on_connect_clicked)
-        self._disconnect_btn = _btn("Disconnect", P.panel,             self._on_disconnect_clicked)
+        self._model_buttons: dict[PicoscopeModel, QPushButton] = {}
+        for model in PicoscopeModel:
+            btn = _ctrl_btn(model.name, checkable=True)
+            btn.clicked.connect(lambda checked, m=model: self._on_model_toggled(m, checked))
+            self._model_buttons[model] = btn
 
-        conn_row = QHBoxLayout()
-        conn_row.addStretch()
-        conn_row.addWidget(self._connect_btn)
-        conn_row.addWidget(self._disconnect_btn)
-        conn_row.addStretch()
-        layout.addLayout(conn_row)
+        # PicoscopeModel enum order: PS6424E first, PS3406B second
+        model_list = list(PicoscopeModel)
 
-        # --- Start / Pause row ---
-        self._start_btn = _btn("Start", P.secondary_accent, self._on_start_clicked)
-        self._pause_btn = _btn("Pause", P.highlight,        self._on_pause_clicked)
-
-        ctrl_row = QHBoxLayout()
-        ctrl_row.addStretch()
-        ctrl_row.addWidget(self._start_btn)
-        ctrl_row.addWidget(self._pause_btn)
-        ctrl_row.addStretch()
-        layout.addLayout(ctrl_row)
-
-        # --- Load Reference / Loopback / Load Config row ---
-        self._load_ref_btn = _btn("Load Reference", P.panel, self._on_load_reference_clicked)
-        self._load_ref_btn.setStyleSheet(self._load_ref_style())
-
-        self._loopback_btn = QPushButton("Loopback: CH A")
-        self._loopback_btn.setCheckable(True)
-        self._loopback_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self._loopback_btn.setStyleSheet(self._toggle_style())
+        self._connect_btn    = _ctrl_btn("Connect",        self._on_connect_clicked)
+        self._disconnect_btn = _ctrl_btn("Disconnect",     self._on_disconnect_clicked)
+        self._start_btn      = _ctrl_btn("Start",          self._on_start_clicked)
+        self._stop_btn       = _ctrl_btn("Stop",           self._on_stop_clicked)
+        self._load_ref_btn   = _ctrl_btn("Load Reference", self._on_load_reference_clicked)
+        self._loopback_btn   = _ctrl_btn("Loopback: CH A", checkable=True)
         self._loopback_btn.setToolTip("Use live Channel A signal as matched filter reference")
         self._loopback_btn.clicked.connect(self._on_loopback_toggled)
+        self._load_config_btn = _ctrl_btn("Load Config",  self._on_load_config_clicked)
 
-        self._load_config_btn = _btn("Load Config", P.panel, self._on_load_config_clicked)
+        for btn in self._model_buttons.values():
+            btn.setStyleSheet(self._toggle_style())
+        self._loopback_btn.setStyleSheet(self._toggle_style())
+        self._connect_btn.setStyleSheet(self._action_btn_style(P.primary_accent))
+        self._disconnect_btn.setStyleSheet(self._action_btn_style(P.panel))
+        self._start_btn.setStyleSheet(self._action_btn_style(P.secondary_accent))
+        self._stop_btn.setStyleSheet(self._action_btn_style(P.highlight))
+        self._load_ref_btn.setStyleSheet(self._load_ref_style())
         self._load_config_btn.setStyleSheet(self._load_ref_style())
 
+        # Speed-of-sound cell — styled to match the button row height
         self._sound_speed_label = QLabel("c =")
-        self._sound_speed_label.setStyleSheet(
-            f"color: {P.text_secondary}; font-size: 12px; background: transparent;"
-        )
-        self._sound_speed_edit = QLineEdit(str(int(config.SOUND_SPEED_MPS)))
-        self._sound_speed_edit.setFixedWidth(70)
+        self._sound_speed_edit  = QLineEdit(str(int(config.SOUND_SPEED_MPS)))
         self._sound_speed_edit.setValidator(QDoubleValidator(1.0, 100_000.0, 1))
-        self._sound_speed_edit.setToolTip("Speed of sound in m/s")
-        self._sound_speed_edit.setStyleSheet(self._lineedit_style())
+        self._sound_speed_edit.setToolTip("Speed of sound (m/s) — press Enter to apply")
         self._sound_speed_edit.returnPressed.connect(self._on_sound_speed_entered)
         self._sound_speed_unit = QLabel("m/s")
-        self._sound_speed_unit.setStyleSheet(
-            f"color: {P.text_secondary}; font-size: 12px; background: transparent;"
-        )
 
-        ref_row = QHBoxLayout()
-        ref_row.addStretch()
-        ref_row.addWidget(self._load_ref_btn)
-        ref_row.addWidget(self._loopback_btn)
-        ref_row.addWidget(self._load_config_btn)
-        ref_row.addSpacing(20)
-        ref_row.addWidget(self._sound_speed_label)
-        ref_row.addWidget(self._sound_speed_edit)
-        ref_row.addWidget(self._sound_speed_unit)
-        ref_row.addStretch()
-        layout.addLayout(ref_row)
+        self._ss_cell = QWidget()
+        self._ss_cell.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        ss_inner = QHBoxLayout(self._ss_cell)
+        ss_inner.setContentsMargins(8, 0, 8, 0)
+        ss_inner.setSpacing(4)
+        ss_inner.addStretch()
+        ss_inner.addWidget(self._sound_speed_label)
+        ss_inner.addWidget(self._sound_speed_edit)
+        ss_inner.addWidget(self._sound_speed_unit)
+        ss_inner.addStretch()
+
+        self._ctrl_panel = QFrame()
+        self._ctrl_panel.setStyleSheet(self._ctrl_panel_style())
+        grid = QGridLayout(self._ctrl_panel)
+        grid.setContentsMargins(8, 8, 8, 8)
+        grid.setSpacing(6)
+
+        # Row 0
+        grid.addWidget(self._model_buttons[model_list[0]], 0, 0)
+        grid.addWidget(self._connect_btn,                  0, 1)
+        grid.addWidget(self._start_btn,                    0, 2)
+        grid.addWidget(self._load_ref_btn,                 0, 3)
+        grid.addWidget(self._loopback_btn,                 0, 4)
+        # Row 1
+        grid.addWidget(self._model_buttons[model_list[1]], 1, 0)
+        grid.addWidget(self._disconnect_btn,               1, 1)
+        grid.addWidget(self._stop_btn,                     1, 2)
+        grid.addWidget(self._load_config_btn,              1, 3)
+        grid.addWidget(self._ss_cell,                      1, 4)
+
+        layout.addWidget(self._ctrl_panel, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         # name → PlotDataItem, kept in sync with the ViewModel's channels
         self._curves: dict[str, pg.PlotDataItem] = {}
@@ -315,6 +311,21 @@ class MainWindow(QMainWindow):
     # Style helpers
     # ------------------------------------------------------------------
 
+    def _theme_btn_style(self) -> str:
+        P = self._palette
+        return f"""
+            QPushButton {{
+                background-color: {P.panel};
+                color: {P.text_primary};
+                border: 1px solid {P.border};
+                border-radius: 4px;
+                font-size: 15px;
+                padding: 0px;
+            }}
+            QPushButton:hover   {{ background-color: {P.hover}; }}
+            QPushButton:pressed {{ background-color: {P.pressed}; }}
+        """
+
     def _toggle_style(self) -> str:
         P = self._palette
         return f"""
@@ -326,15 +337,8 @@ class MainWindow(QMainWindow):
                 padding: 5px 16px;
                 font-size: 12px;
             }}
-            QPushButton:hover {{
-                background-color: {P.hover};
-                color: {P.text_primary};
-            }}
-            QPushButton:checked {{
-                background-color: {P.primary_accent};
-                color: {P.text_primary};
-                border-color: {P.primary_accent};
-            }}
+            QPushButton:hover   {{ background-color: {P.hover}; color: {P.text_primary}; }}
+            QPushButton:checked {{ background-color: {P.primary_accent}; color: {P.text_primary}; border-color: {P.primary_accent}; }}
         """
 
     def _action_btn_style(self, color: str) -> str:
@@ -367,20 +371,16 @@ class MainWindow(QMainWindow):
             QPushButton:pressed {{ background-color: {P.pressed}; }}
         """
 
-    def _theme_btn_style(self) -> str:
+    def _ctrl_panel_style(self) -> str:
         P = self._palette
-        return f"""
-            QPushButton {{
-                background-color: {P.panel};
-                color: {P.text_primary};
-                border: 1px solid {P.border};
-                border-radius: 4px;
-                font-size: 15px;
-                padding: 0px;
-            }}
-            QPushButton:hover   {{ background-color: {P.hover}; }}
-            QPushButton:pressed {{ background-color: {P.pressed}; }}
-        """
+        return f"QFrame {{ border: 1px solid {P.border}; border-radius: 6px; background-color: {P.panel}; }}"
+
+    def _ss_cell_style(self) -> str:
+        P = self._palette
+        return (
+            f"QWidget {{ background-color: {P.background}; border: 1px solid {P.border}; border-radius: 4px; }}"
+            f" QLabel {{ border: none; background: transparent; color: {P.text_secondary}; font-size: 12px; }}"
+        )
 
     def _lineedit_style(self) -> str:
         P = self._palette
@@ -455,36 +455,30 @@ class MainWindow(QMainWindow):
                                      **{"color": P.text_secondary, "font-size": "10pt"})
         self._loopback_curve.setPen(pg.mkPen(color=P.highlight, width=2))
 
+        self._ctrl_panel.setStyleSheet(self._ctrl_panel_style())
         for btn in self._model_buttons.values():
             btn.setStyleSheet(self._toggle_style())
-
+        self._loopback_btn.setStyleSheet(self._toggle_style())
         self._connect_btn.setStyleSheet(self._action_btn_style(P.primary_accent))
         self._disconnect_btn.setStyleSheet(self._action_btn_style(P.panel))
         self._start_btn.setStyleSheet(self._action_btn_style(P.secondary_accent))
-        self._pause_btn.setStyleSheet(self._action_btn_style(P.highlight))
+        self._stop_btn.setStyleSheet(self._action_btn_style(P.highlight))
         self._load_ref_btn.setStyleSheet(self._load_ref_style())
         self._load_config_btn.setStyleSheet(self._load_ref_style())
-        self._loopback_btn.setStyleSheet(self._toggle_style())
+        self._ss_cell.setStyleSheet(self._ss_cell_style())
+        self._sound_speed_edit.setStyleSheet(
+            "border: none; background: transparent; "
+            f"color: {P.text_primary}; font-size: 12px;"
+        )
         self._theme_btn.setStyleSheet(self._theme_btn_style())
-        self._sound_speed_edit.setStyleSheet(self._lineedit_style())
-        _lbl = f"color: {P.text_secondary}; font-size: 12px; background: transparent;"
-        self._sound_speed_label.setStyleSheet(_lbl)
-        self._sound_speed_unit.setStyleSheet(_lbl)
 
         pg.setConfigOption("background", P.plot_background)
         pg.setConfigOption("foreground", P.text_secondary)
 
-        he_logo = "hybridecho_logo.png" if self._is_dark else "HE_logo_rot_transparent.png"
-        he_h = _LOGO_H if self._is_dark else _LOGO_H_LIGHT_HE
-        px = QPixmap(str(_ASSETS / he_logo))
-        self._logo_right.setPixmap(px.scaledToHeight(he_h, Qt.TransformationMode.SmoothTransformation))
-        self._logo_right.adjustSize()
-
+        he_logo   = "hybridecho_logo.png" if self._is_dark else "HE_logo_rot_transparent.png"
         ekfz_logo = "ekfz_logo_white.png" if self._is_dark else "ekfz_logo_blue.png"
-        ekfz_h = _LOGO_H
-        px = QPixmap(str(_ASSETS / ekfz_logo))
-        self._logo_left.setPixmap(px.scaledToHeight(ekfz_h, Qt.TransformationMode.SmoothTransformation))
-        self._logo_left.adjustSize()
+        self._px_right = QPixmap(str(_ASSETS / he_logo))
+        self._px_left  = QPixmap(str(_ASSETS / ekfz_logo))
 
         # Re-apply current status colours without triggering the status message popup
         self._on_status_changed(self._current_conn_status, show_message=False)
@@ -519,8 +513,28 @@ class MainWindow(QMainWindow):
             return
         w, h = cw.width(), cw.height()
         m = _MSG_MARGIN
-        self._logo_left.move(m, h - self._logo_left.height() - m)
-        self._logo_right.move(w - self._logo_right.width() - m, h - self._logo_right.height() - m)
+
+        # Scale logos proportionally to window height, capped at their design maximum.
+        left_h  = max(0, min(_LOGO_H,           h // 7))
+        right_h = max(0, min(_LOGO_H if self._is_dark else _LOGO_H_LIGHT_HE, h // 7))
+        smooth  = Qt.TransformationMode.SmoothTransformation
+
+        if left_h > 0:
+            self._logo_left.setPixmap(self._px_left.scaledToHeight(left_h, smooth))
+            self._logo_left.adjustSize()
+            self._logo_left.move(m, h - self._logo_left.height() - m)
+            self._logo_left.show()
+        else:
+            self._logo_left.hide()
+
+        if right_h > 0:
+            self._logo_right.setPixmap(self._px_right.scaledToHeight(right_h, smooth))
+            self._logo_right.adjustSize()
+            self._logo_right.move(w - self._logo_right.width() - m, h - self._logo_right.height() - m)
+            self._logo_right.show()
+        else:
+            self._logo_right.hide()
+
         self._theme_btn.move(w - _THEME_BTN_SIZE - m, m)
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
@@ -636,7 +650,7 @@ class MainWindow(QMainWindow):
         assert self._vm is not None
         self._vm.start()
 
-    def _on_pause_clicked(self) -> None:
+    def _on_stop_clicked(self) -> None:
         assert self._vm is not None
         self._vm.pause()
 
