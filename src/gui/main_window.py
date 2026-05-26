@@ -271,6 +271,7 @@ class MainWindow(QMainWindow):
         self._sound_speed_unit = QLabel("m/s")
 
         self._ss_cell = QWidget()
+        self._ss_cell.setObjectName("ss_cell")
         self._ss_cell.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         ss_inner = QHBoxLayout(self._ss_cell)
         ss_inner.setContentsMargins(8, 0, 8, 0)
@@ -280,6 +281,8 @@ class MainWindow(QMainWindow):
         ss_inner.addWidget(self._sound_speed_edit)
         ss_inner.addWidget(self._sound_speed_unit)
         ss_inner.addStretch()
+        self._ss_cell.setStyleSheet(self._ss_cell_style())
+        self._sound_speed_edit.setStyleSheet(self._ss_edit_style())
 
         self._ctrl_panel = QFrame()
         self._ctrl_panel.setStyleSheet(self._ctrl_panel_style())
@@ -389,9 +392,13 @@ class MainWindow(QMainWindow):
     def _ss_cell_style(self) -> str:
         P = self._palette
         return (
-            f"QWidget {{ background-color: {P.background}; border: 1px solid {P.border}; border-radius: 4px; }}"
+            f"QWidget#ss_cell {{ background-color: {P.background}; border: 1px solid {P.border}; border-radius: 4px; }}"
             f" QLabel {{ border: none; background: transparent; color: {P.text_secondary}; font-size: 12px; }}"
         )
+
+    def _ss_edit_style(self) -> str:
+        P = self._palette
+        return f"QLineEdit {{ border: none; background: transparent; color: {P.text_primary}; font-size: 12px; }}"
 
     def _lineedit_style(self) -> str:
         P = self._palette
@@ -477,10 +484,7 @@ class MainWindow(QMainWindow):
         self._load_ref_btn.setStyleSheet(self._load_ref_style())
         self._load_config_btn.setStyleSheet(self._load_ref_style())
         self._ss_cell.setStyleSheet(self._ss_cell_style())
-        self._sound_speed_edit.setStyleSheet(
-            "border: none; background: transparent; "
-            f"color: {P.text_primary}; font-size: 12px;"
-        )
+        self._sound_speed_edit.setStyleSheet(self._ss_edit_style())
         self._theme_btn.setStyleSheet(self._theme_btn_style())
 
         pg.setConfigOption("background", P.plot_background)

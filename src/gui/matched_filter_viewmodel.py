@@ -112,6 +112,7 @@ class MatchedFilterViewModel(QObject):
         if acf.max() > 0:
             acf /= acf.max()
         self._acf_db = 20.0 * np.log10(np.maximum(acf, 1e-6))
+        _log.info("Reference set or updated")
         self._emit_ambiguity()
 
         self.reference_changed.emit()
@@ -127,6 +128,7 @@ class MatchedFilterViewModel(QObject):
     def set_sound_speed(self, mps: float) -> None:
         """Update the speed of sound used for the depth axis."""
         self._sound_speed = mps
+        _log.info("Speed of sound changed")
         self._emit_ambiguity()
 
     def _emit_ambiguity(self) -> None:
@@ -158,6 +160,7 @@ class MatchedFilterViewModel(QObject):
         import config as config
         CROSSTALK_SKIP_SAMPLES = config.CROSSTALK_SKIP_SAMPLES
         self._sound_speed = config.SOUND_SPEED_MPS
+        _log.info("Config loaded")
         self._emit_ambiguity()
 
     def _on_result(self, x: np.ndarray, y: np.ndarray) -> None:
