@@ -122,7 +122,7 @@ class MainWindow(QMainWindow):
             lbl.raise_()
             return lbl
 
-        self._logo_left  = _logo_label("ekfz_logo.png")
+        self._logo_left  = _logo_label("ekfz_logo_white.png")
         self._logo_right = _logo_label("hybridecho_logo.png")
 
         layout = QVBoxLayout(central)
@@ -181,8 +181,8 @@ class MainWindow(QMainWindow):
                                units="dBFS", **{"color": P.text_secondary, "font-size": "10pt"})
         self._mf_plot.setStyleSheet(f"border: 1px solid {P.border}; border-radius: 4px;")
         self._mf_plot.setXRange(0, config.MF_MAX_DEPTH_M, padding=0)
-        self._mf_plot.setYRange(-120, 0, padding=0)
-        self._mf_plot.setLimits(xMin=0, xMax=config.MF_MAX_DEPTH_M, yMin=-120, yMax=0)
+        self._mf_plot.setYRange(-60, 0, padding=0)
+        self._mf_plot.setLimits(xMin=0, xMax=config.MF_MAX_DEPTH_M, yMin=-60, yMax=0)
         self._mf_plot.setMouseEnabled(x=True, y=False)
         self._mf_curve = self._mf_plot.plot(
             [], [], pen=pg.mkPen(color=P.secondary_accent, width=2)
@@ -411,6 +411,12 @@ class MainWindow(QMainWindow):
         self._logo_right.setPixmap(px.scaledToHeight(he_h, Qt.TransformationMode.SmoothTransformation))
         self._logo_right.adjustSize()
 
+        ekfz_logo = "ekfz_logo_white.png" if self._is_dark else "ekfz_logo_blue.png"
+        ekfz_h = _LOGO_H
+        px = QPixmap(str(_ASSETS / ekfz_logo))
+        self._logo_left.setPixmap(px.scaledToHeight(ekfz_h, Qt.TransformationMode.SmoothTransformation))
+        self._logo_left.adjustSize()
+
         # Re-apply current status colours without triggering the status message popup
         self._on_status_changed(self._current_conn_status, show_message=False)
         self._on_acq_status_changed(self._current_acq_status)
@@ -591,7 +597,7 @@ class MainWindow(QMainWindow):
         self._plot_widget.setYRange(-config.CH_B_DISPLAY_RANGE_MV, config.CH_B_DISPLAY_RANGE_MV, padding=0)
         self._loopback_plot.setYRange(-config.CH_A_DISPLAY_RANGE_MV, config.CH_A_DISPLAY_RANGE_MV, padding=0)
         self._mf_plot.setXRange(0, config.MF_MAX_DEPTH_M, padding=0)
-        self._mf_plot.setLimits(xMin=0, xMax=config.MF_MAX_DEPTH_M, yMin=-120, yMax=0)
+        self._mf_plot.setLimits(xMin=0, xMax=config.MF_MAX_DEPTH_M, yMin=-60, yMax=0)
         self._show_message(f"Config loaded: {Path(path).name} — hardware settings apply on next Start")
 
     def _on_meta_changed(self) -> None:
