@@ -187,17 +187,17 @@ class pico_handler(PicoScope):
         c_timeIndisposedMs = ctypes.c_double(0)
         c_timebase = ctypes.c_uint32(timebase)
 
-        self.status["runblock"] = ps.ps3000aRunBlock(self.chandle, 0, self.samples, c_timebase, 1, ctypes.byref(c_timeIndisposedMs), 0, None, None)
+        ps.ps3000aRunBlock(self.chandle, 0, self.samples, c_timebase, 1, ctypes.byref(c_timeIndisposedMs), 0, None, None)
         ready = ctypes.c_int16(0)
         check = ctypes.c_int16(0)
         while ready.value == check.value:
-            self.status["isReady"] = ps.ps3000aIsReady(self.chandle, ctypes.byref(ready))
+            ps.ps3000aIsReady(self.chandle, ctypes.byref(ready))
 
         overflow = ctypes.c_int16(0)
         nSamples = self.samples
         noOfSamples = ctypes.c_uint64(nSamples)
-        self.status["getValues"] = ps.ps3000aGetValues(self.chandle, 0, ctypes.byref(noOfSamples), 1, ps.PS3000A_RATIO_MODE["PS3000A_RATIO_MODE_NONE"], 0, ctypes.byref(overflow))
-        assert_pico_ok(self.status["getValues"])
+        status_getValues = ps.ps3000aGetValues(self.chandle, 0, ctypes.byref(noOfSamples), 1, ps.PS3000A_RATIO_MODE["PS3000A_RATIO_MODE_NONE"], 0, ctypes.byref(overflow))
+        assert_pico_ok(status_getValues)
     
     def return_data(self):
         data = np.full((self.samples, 4), np.nan, dtype=np.float32)

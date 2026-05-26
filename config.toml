@@ -2,7 +2,7 @@
 [picoscope]
 model                   = "PS3406B"  # PS6424E | PS3406B
 samples                 = 312500
-timebase                = 5          # 5=156.25 MHz  6=78.125 MHz  7=39.06 MHz
+target_sample_rate_hz   = 156250000  # best-fit timebase is chosen automatically per model
 acquisition_interval_ms = 300
 
 [picoscope.channel_a]

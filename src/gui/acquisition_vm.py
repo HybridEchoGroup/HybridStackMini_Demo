@@ -9,7 +9,6 @@ import numpy as np
 from PyQt6.QtCore import QObject, QRunnable, QThread, QThreadPool, QTimer, pyqtSignal
 
 import config as _config
-from config import TIMEBASE
 import logging
 
 from driver.picoscope import PicoScope, create_backend
@@ -64,9 +63,10 @@ class PicoDataCollector(QObject):
     collect     = pyqtSignal(object)
     stop_signal = pyqtSignal()
 
-    def __init__(self, handle: PicoScope) -> None:
+    def __init__(self, handle: PicoScope, timebase: int) -> None:
         super().__init__()
         self._pico_handle = handle
+        self._timebase = timebase
         self._timer: QTimer | None = None
 
     def start(self) -> None:
@@ -77,7 +77,7 @@ class PicoDataCollector(QObject):
         self._timer.start()
 
     def _collect(self) -> None:
-        self._pico_handle.start_data_collect(TIMEBASE)
+        self._pico_handle.start_data_collect(self._timebase)
         self.collect.emit(self._pico_handle.return_data())
 
     def _stop(self) -> None:
@@ -166,8 +166,12 @@ class AcquisitionViewModel(QObject):
             _config.TRIGGER_CHANNEL,
         )
 
+        model_str = self._selected_model.value if self._selected_model else ""
+        tb = _config.timebase_for_model(model_str)
+        _log.info("Using timebase index %d for model %s", tb, model_str)
+
         self._sr_thread = QThread()
-        self._sr_worker = PicoDataCollector(self.picoscope_handle)
+        self._sr_worker = PicoDataCollector(self.picoscope_handle, tb)
         self._sr_worker.moveToThread(self._sr_thread)
         self._sr_thread.started.connect(self._sr_worker.start)
         self._sr_thread.finished.connect(self._sr_worker.deleteLater)
