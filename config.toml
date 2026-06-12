@@ -9,7 +9,7 @@ acquisition_interval_ms = 200
 voltage_range = 9
 
 [picoscope.channel_b]
-voltage_range = 1
+voltage_range = 9
 
 [picoscope.trigger]
 channel       = 0
@@ -23,6 +23,4 @@ default_reference_freq_hz   = 7000000
 loopback_extra_samples      = 500      # extra samples beyond file-ref length for loopback crop
 
 [display]
-mf_max_depth_m      = 0.1
-channel_a_range_mv  = 10000.0
-channel_b_range_mv  = 10.0
+mf_max_depth_m = 0.1

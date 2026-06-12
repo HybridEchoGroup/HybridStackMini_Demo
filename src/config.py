@@ -10,7 +10,7 @@ import logging
 import tomllib
 from pathlib import Path
 
-from driver.utils import timebase, timebase_3000
+from driver.utils import timebase, timebase_3000, voltage_level
 
 _CONFIG_PATH = Path(__file__).parent / "config.toml"
 _log = logging.getLogger(__name__)
@@ -95,9 +95,9 @@ LOOPBACK_EXTRA_SAMPLES    = _get("signal_processing.loopback_extra_samples",    
 # Display
 # ---------------------------------------------------------------------------
 
-MF_MAX_DEPTH_M        = _get("display.mf_max_depth_m",     0.1)
-CH_A_DISPLAY_RANGE_MV = _get("display.channel_a_range_mv", 10_000.0)
-CH_B_DISPLAY_RANGE_MV = _get("display.channel_b_range_mv", 10.0)
+MF_MAX_DEPTH_M        = _get("display.mf_max_depth_m", 0.1)
+CH_A_DISPLAY_RANGE_MV = voltage_level(CH_A_VOLTAGE_RANGE).volts * 1000.0
+CH_B_DISPLAY_RANGE_MV = voltage_level(CH_B_VOLTAGE_RANGE).volts * 1000.0
 
 
 def timebase_for_model(model_str: str) -> int:
@@ -149,8 +149,8 @@ def reload(path: str | None = None) -> None:
     g["CROSSTALK_SKIP_SAMPLES"]    = _get("signal_processing.crosstalk_skip_samples",      1000)
     g["DEFAULT_REFERENCE_FREQ_HZ"] = _get("signal_processing.default_reference_freq_hz",  7_000_000)
     g["LOOPBACK_EXTRA_SAMPLES"]    = _get("signal_processing.loopback_extra_samples",      500)
-    g["MF_MAX_DEPTH_M"]            = _get("display.mf_max_depth_m",      0.1)
-    g["CH_A_DISPLAY_RANGE_MV"]     = _get("display.channel_a_range_mv",  10_000.0)
-    g["CH_B_DISPLAY_RANGE_MV"]     = _get("display.channel_b_range_mv",  10.0)
+    g["MF_MAX_DEPTH_M"]        = _get("display.mf_max_depth_m", 0.1)
+    g["CH_A_DISPLAY_RANGE_MV"] = voltage_level(g["CH_A_VOLTAGE_RANGE"]).volts * 1000.0
+    g["CH_B_DISPLAY_RANGE_MV"] = voltage_level(g["CH_B_VOLTAGE_RANGE"]).volts * 1000.0
 
     log_config()
