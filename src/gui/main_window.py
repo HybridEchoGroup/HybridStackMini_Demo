@@ -58,7 +58,8 @@ class MainWindow(QMainWindow):
         self._current_conn_status = ConnectionStatus.DISCONNECTED
         self._current_acq_status = AcquisitionStatus.IDLE
         self._use_loopback = False
-        self._loaded_ref_length: int | None = None
+        self._ref_lengths: list[int | None] = [None, None]   # per-signal loaded reference length
+        self._refs: list[np.ndarray | None] = [None, None]   # per-signal reference arrays
         self._frame_count = 0
         self._selected_signal = 0  # 0 = Signal 1 (even frames), 1 = Signal 2 (odd frames)
 
@@ -222,6 +223,10 @@ class MainWindow(QMainWindow):
         self._mf_vm = MatchedFilterViewModel(self)
         self._mf_vm.result_ready.connect(self._on_mf_result)
         self._mf_vm.ambiguity_ready.connect(self._on_af_result)
+        # Seed both per-signal references with the default sine
+        _default_ref = self._mf_vm.reference
+        if _default_ref is not None:
+            self._refs = [_default_ref.copy(), _default_ref.copy()]
 
         # --- Control panel: 2-row × 5-column grid inside a bordered frame ---
         # Row 0: PS6424E | Connect | Start | Load Reference | Loopback
@@ -256,6 +261,8 @@ class MainWindow(QMainWindow):
         self._sig_select_btn = _ctrl_btn("Signal 1", checkable=True)
         self._sig_select_btn.setToolTip("Toggle between Signal 1 (even frames) and Signal 2 (odd frames)")
         self._sig_select_btn.clicked.connect(self._on_signal_selected)
+        self._swap_refs_btn = _ctrl_btn("Swap Refs", self._on_swap_refs_clicked)
+        self._swap_refs_btn.setToolTip("Swap reference signals between Signal 1 and Signal 2")
 
         for btn in self._model_buttons.values():
             btn.setStyleSheet(self._toggle_style())
@@ -267,6 +274,7 @@ class MainWindow(QMainWindow):
         self._stop_btn.setStyleSheet(self._action_btn_style(P.highlight))
         self._load_ref_btn.setStyleSheet(self._load_ref_style())
         self._load_config_btn.setStyleSheet(self._load_ref_style())
+        self._swap_refs_btn.setStyleSheet(self._load_ref_style())
 
         # Speed-of-sound cell — styled to match the button row height
         self._sound_speed_label = QLabel("c =")
@@ -309,6 +317,7 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._stop_btn,                     1, 2)
         grid.addWidget(self._load_config_btn,              1, 3)
         grid.addWidget(self._ss_cell,                      1, 4)
+        grid.addWidget(self._swap_refs_btn,                1, 5)
 
         layout.addWidget(self._ctrl_panel, alignment=Qt.AlignmentFlag.AlignHCenter)
 
@@ -491,6 +500,7 @@ class MainWindow(QMainWindow):
         self._stop_btn.setStyleSheet(self._action_btn_style(P.highlight))
         self._load_ref_btn.setStyleSheet(self._load_ref_style())
         self._load_config_btn.setStyleSheet(self._load_ref_style())
+        self._swap_refs_btn.setStyleSheet(self._load_ref_style())
         self._ss_cell.setStyleSheet(self._ss_cell_style())
         self._sound_speed_edit.setStyleSheet(self._ss_edit_style())
         self._theme_btn.setStyleSheet(self._theme_btn_style())
@@ -598,12 +608,15 @@ class MainWindow(QMainWindow):
         if len(dataA) > 0:
             self._loopback_curve.setData(_TIME_AXIS, dataA)
             if self._use_loopback:
-                if self._loaded_ref_length is not None:
-                    crop = min(self._loaded_ref_length, len(dataA))
+                ref_len = self._ref_lengths[self._selected_signal]
+                if ref_len is not None:
+                    crop = min(ref_len, len(dataA))
                 else:
                     ref  = self._mf_vm.reference
                     crop = min(len(ref) + config.LOOPBACK_EXTRA_SAMPLES, len(dataA)) if ref is not None else len(dataA)
-                self._mf_vm.set_reference(dataA[:crop])
+                cropped = dataA[:crop]
+                self._refs[self._selected_signal] = cropped.copy()
+                self._mf_vm.set_reference(cropped)
         self._vm.update_channel("CH B", _TIME_AXIS, dataB)
         self._mf_vm.process(dataB)
 
@@ -676,13 +689,27 @@ class MainWindow(QMainWindow):
             self._show_message("Loopback: using CH A as reference")
         else:
             self._mf_vm.load_default_reference()
-            self._show_message("Loopback off: using ideal reference")
+            ref = self._mf_vm.reference
+            self._refs[self._selected_signal] = ref.copy() if ref is not None else None
+            self._ref_lengths[self._selected_signal] = None
+            self._show_message("Loopback off: restored ideal reference for current signal")
 
     def _on_signal_selected(self, checked: bool) -> None:
         self._selected_signal = 1 if checked else 0
         label = "Signal 2" if checked else "Signal 1"
         self._sig_select_btn.setText(label)
+        ref = self._refs[self._selected_signal]
+        if ref is not None:
+            self._mf_vm.set_reference(ref)
         self._show_message(f"Displaying {label}")
+
+    def _on_swap_refs_clicked(self) -> None:
+        self._refs[0], self._refs[1] = self._refs[1], self._refs[0]
+        self._ref_lengths[0], self._ref_lengths[1] = self._ref_lengths[1], self._ref_lengths[0]
+        ref = self._refs[self._selected_signal]
+        if ref is not None:
+            self._mf_vm.set_reference(ref)
+        self._show_message("References swapped")
 
     def _on_sound_speed_entered(self) -> None:
         try:
@@ -693,14 +720,16 @@ class MainWindow(QMainWindow):
         self._show_message(f"Speed of sound set to {mps:.0f} m/s")
 
     def _on_load_reference_clicked(self) -> None:
+        sig_label = f"Signal {self._selected_signal + 1}"
         path, _ = QFileDialog.getOpenFileName(
-            self, "Load Reference Signal", "", "Binary files (*.bin);;All files (*)"
+            self, f"Load Reference for {sig_label}", "", "Binary files (*.bin);;All files (*)"
         )
         if path:
             self._mf_vm.load_reference(path)
             ref = self._mf_vm.reference
-            self._loaded_ref_length = len(ref) if ref is not None else None
-            self._show_message(f"Reference loaded: {Path(path).name}")
+            self._refs[self._selected_signal] = ref.copy() if ref is not None else None
+            self._ref_lengths[self._selected_signal] = len(ref) if ref is not None else None
+            self._show_message(f"Reference for {sig_label} loaded: {Path(path).name}")
 
     def _on_load_config_clicked(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
