@@ -59,6 +59,8 @@ class MainWindow(QMainWindow):
         self._current_acq_status = AcquisitionStatus.IDLE
         self._use_loopback = False
         self._loaded_ref_length: int | None = None
+        self._frame_count = 0
+        self._selected_signal = 0  # 0 = Signal 1 (even frames), 1 = Signal 2 (odd frames)
 
         self.setWindowTitle("HybridStackMini Demo")
         self.resize(1250, 550)
@@ -251,10 +253,14 @@ class MainWindow(QMainWindow):
         self._loopback_btn.setToolTip("Use live Channel A signal as matched filter reference")
         self._loopback_btn.clicked.connect(self._on_loopback_toggled)
         self._load_config_btn = _ctrl_btn("Load Config",  self._on_load_config_clicked)
+        self._sig_select_btn = _ctrl_btn("Signal 1", checkable=True)
+        self._sig_select_btn.setToolTip("Toggle between Signal 1 (even frames) and Signal 2 (odd frames)")
+        self._sig_select_btn.clicked.connect(self._on_signal_selected)
 
         for btn in self._model_buttons.values():
             btn.setStyleSheet(self._toggle_style())
         self._loopback_btn.setStyleSheet(self._toggle_style())
+        self._sig_select_btn.setStyleSheet(self._toggle_style())
         self._connect_btn.setStyleSheet(self._action_btn_style(P.primary_accent))
         self._disconnect_btn.setStyleSheet(self._action_btn_style(P.panel))
         self._start_btn.setStyleSheet(self._action_btn_style(P.secondary_accent))
@@ -296,6 +302,7 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._start_btn,                    0, 2)
         grid.addWidget(self._load_ref_btn,                 0, 3)
         grid.addWidget(self._loopback_btn,                 0, 4)
+        grid.addWidget(self._sig_select_btn,               0, 5)
         # Row 1
         grid.addWidget(self._model_buttons[model_list[1]], 1, 0)
         grid.addWidget(self._disconnect_btn,               1, 1)
@@ -477,6 +484,7 @@ class MainWindow(QMainWindow):
         for btn in self._model_buttons.values():
             btn.setStyleSheet(self._toggle_style())
         self._loopback_btn.setStyleSheet(self._toggle_style())
+        self._sig_select_btn.setStyleSheet(self._toggle_style())
         self._connect_btn.setStyleSheet(self._action_btn_style(P.primary_accent))
         self._disconnect_btn.setStyleSheet(self._action_btn_style(P.panel))
         self._start_btn.setStyleSheet(self._action_btn_style(P.secondary_accent))
@@ -582,6 +590,10 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_live_data_ready(self) -> None:
+        parity = self._frame_count % 2
+        self._frame_count += 1
+        if parity != self._selected_signal:
+            return
         dataA, dataB = self._acq_vm.dataA, self._acq_vm.dataB
         if len(dataA) > 0:
             self._loopback_curve.setData(_TIME_AXIS, dataA)
@@ -652,6 +664,7 @@ class MainWindow(QMainWindow):
         self._acq_vm.disconnect()
 
     def _on_start_clicked(self) -> None:
+        self._frame_count = 0
         self._acq_vm.start()
 
     def _on_stop_clicked(self) -> None:
@@ -664,6 +677,12 @@ class MainWindow(QMainWindow):
         else:
             self._mf_vm.load_default_reference()
             self._show_message("Loopback off: using ideal reference")
+
+    def _on_signal_selected(self, checked: bool) -> None:
+        self._selected_signal = 1 if checked else 0
+        label = "Signal 2" if checked else "Signal 1"
+        self._sig_select_btn.setText(label)
+        self._show_message(f"Displaying {label}")
 
     def _on_sound_speed_entered(self) -> None:
         try:

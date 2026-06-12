@@ -68,7 +68,7 @@ def _best_timebase(target_hz: float, model: str) -> tuple:
 
 PICOSCOPE_MODEL          = _get("picoscope.model",                   "PS3406B")
 N_SAMPLES                = _get("picoscope.samples",                 312_500)
-ACQUISITION_INTERVAL_MS  = _get("picoscope.acquisition_interval_ms", 300)
+ACQUISITION_INTERVAL_MS  = _get("picoscope.acquisition_interval_ms", 200)
 
 CH_A_VOLTAGE_RANGE       = _get("picoscope.channel_a.voltage_range", 9)
 CH_B_VOLTAGE_RANGE       = _get("picoscope.channel_b.voltage_range", 1)
@@ -131,7 +131,7 @@ def reload(path: str | None = None) -> None:
     g = globals()
     g["PICOSCOPE_MODEL"]           = _get("picoscope.model",                    "PS3406B")
     g["N_SAMPLES"]                 = _get("picoscope.samples",                  312_500)
-    g["ACQUISITION_INTERVAL_MS"]   = _get("picoscope.acquisition_interval_ms",  300)
+    g["ACQUISITION_INTERVAL_MS"]   = _get("picoscope.acquisition_interval_ms",  200)
     g["CH_A_VOLTAGE_RANGE"]        = _get("picoscope.channel_a.voltage_range",  9)
     g["CH_B_VOLTAGE_RANGE"]        = _get("picoscope.channel_b.voltage_range",  1)
     g["TRIGGER_CHANNEL"]           = _get("picoscope.trigger.channel",          0)
