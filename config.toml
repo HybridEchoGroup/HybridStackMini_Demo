@@ -13,7 +13,7 @@ voltage_range = 1
 
 [picoscope.trigger]
 channel       = 0
-threshold_mv  = 2600
+threshold_mv  = 1000
 voltage_range = 9
 
 [signal_processing]
